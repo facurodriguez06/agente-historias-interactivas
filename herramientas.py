@@ -1,12 +1,28 @@
-"""Primera tool del agente: consulta RAG con referencia a su documento fuente."""
+"""Tools del agente: RAG del mundo narrativo, estado de la partida y exportación a PDF.
 
+El id de la partida NO es un argumento de las tools: lo fija la aplicación en el
+contexto de cada ejecución (ContextoPartida) y las tools lo leen de ahí. Así el LLM
+no puede elegir ni inventar de qué partida lee o escribe.
+"""
+
+from dataclasses import dataclass
 from functools import lru_cache
 
+from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
+import estado_partida
+from generar_pdf import generar_pdf
 from ingestar import DB_DIR, MODELO_EMBEDDINGS, COLECCION
+
+
+@dataclass
+class ContextoPartida:
+    """Datos que fija la aplicación en cada ejecución del agente (no los decide el LLM)."""
+
+    id_partida: str
 
 
 @lru_cache(maxsize=1)
@@ -36,51 +52,61 @@ def buscar_contexto_narrativo(consulta: str) -> str:
         return f"ERROR al consultar RAG: {type(exc).__name__}: {exc}"
 
 
-from estado_partida import consultar_estado
-
-
 @tool
-def consultar_estado_partida(id_partida: str) -> dict:
-    """Consulta el estado de una partida para conocer sus decisiones, inventario y progreso."""
+def consultar_estado_partida(runtime: ToolRuntime[ContextoPartida]) -> dict:
+    """Devuelve el estado de la partida en curso: capítulos escritos, decisiones tomadas, inventario, pistas descubiertas, si terminó y cuál es el siguiente paso. Sin argumentos."""
     try:
-        return consultar_estado(id_partida)
-    except ValueError as e:
+        estado = estado_partida.consultar_estado(runtime.context.id_partida)
+        return {**estado, "siguiente_paso": estado_partida.siguiente_paso(estado)}
+    except (ValueError, OSError) as e:
         return {"error": str(e)}
 
 
-from estado_partida import registrar_decision as guardar_decision
-
-
 @tool
-def registrar_decision(id_partida: str, opcion: int) -> dict:
-    """Registra la opción elegida por el usuario y actualiza el estado de la partida."""
+def registrar_decision(
+    opcion: int,
+    runtime: ToolRuntime[ContextoPartida],
+    objetos_recogidos: list[str] | None = None,
+    objetos_usados: list[str] | None = None,
+    pistas_descubiertas: list[str] | None = None,
+) -> dict:
+    """Registra la opción (1, 2 o 3) que el usuario eligió en el capítulo pendiente y actualiza inventario y pistas.
+    - objetos_recogidos: solo objetos que el usuario ELIGIÓ recoger con esta decisión.
+    - objetos_usados: objetos que esta decisión usa; deben estar ya en el inventario.
+    - pistas_descubiertas: pistas nuevas que el usuario descubrió con esta decisión (frases cortas).
+    Los objetos deben llamarse exactamente como figura en las instrucciones. Si devuelve error, corregí y reintentá."""
     try:
-        return guardar_decision(id_partida, opcion)
-    except ValueError as e:
+        return estado_partida.registrar_decision(
+            runtime.context.id_partida,
+            opcion,
+            objetos_recogidos,
+            objetos_usados,
+            pistas_descubiertas,
+        )
+    except (ValueError, OSError) as e:
         return {"error": str(e)}
-
-
-from estado_partida import guardar_capitulo as guardar_capitulo_json
 
 
 @tool
 def guardar_capitulo(
-    id_partida: str, titulo: str, texto: str, opciones: list[str]
+    titulo: str,
+    texto: str,
+    opciones: list[str],
+    runtime: ToolRuntime[ContextoPartida],
 ) -> dict:
-    """Guarda un capítulo de la historia con su título, narración y tres opciones."""
+    """Guarda el capítulo que estás por mostrar: título, texto narrado y opciones. Capítulos 1 a 4: exactamente tres opciones. Capítulo 5 (desenlace): opciones=[] y la historia queda terminada."""
     try:
-        return guardar_capitulo_json(id_partida, titulo, texto, opciones)
-    except ValueError as e:
+        return estado_partida.guardar_capitulo(
+            runtime.context.id_partida, titulo, texto, opciones
+        )
+    except (ValueError, OSError) as e:
         return {"error": str(e)}
 
 
-from generar_pdf import generar_pdf
-
-
 @tool
-def generar_pdf_historia(id_partida: str) -> str:
-    """Genera un PDF con los capítulos y decisiones de una partida."""
+def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
+    """Genera el PDF con los capítulos y decisiones de la partida. Solo funciona cuando la historia terminó (capítulo 5 guardado). Devuelve la ruta del archivo."""
     try:
-        return generar_pdf(id_partida)
-    except ValueError as e:
+        return generar_pdf(runtime.context.id_partida)
+    except (ValueError, OSError) as e:
         return f"Error al generar PDF: {e}"

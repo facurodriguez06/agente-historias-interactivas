@@ -33,7 +33,11 @@ agente-historias-interactivas/
 ├── estado_partida.py
 ├── ingestar.py
 ├── generar_pdf.py
+├── tests/
+├── pytest.ini
 ├── requirements.txt
+├── requirements-dev.txt
+├── .env.example
 ├── README.md
 └── .gitignore
 ```
@@ -42,11 +46,12 @@ agente-historias-interactivas/
 
 - `agente.py`: configura el modelo DeepSeek, las herramientas disponibles, el prompt y el checkpointer.
 - `app.py`: implementa la interfaz web mediante Streamlit.
-- `herramientas.py`: contiene las cinco tools disponibles para el agente.
-- `estado_partida.py`: administra los estados de partida mediante archivos JSON.
+- `herramientas.py`: contiene las cinco tools disponibles para el agente y `ContextoPartida`, que lleva el id de la partida a las tools.
+- `estado_partida.py`: administra los estados de partida mediante archivos JSON y hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre).
 - `ingestar.py`: procesa los documentos y construye la base vectorial RAG.
 - `generar_pdf.py`: crea el PDF a partir de los capítulos y decisiones guardados.
 - `corpus/`: contiene los documentos que definen el universo narrativo.
+- `tests/`: pruebas automáticas que no usan LLM ni red.
 
 ## 3. Sistema RAG
 
@@ -72,19 +77,21 @@ La ingesta inicial procesó 3 documentos y generó 8 fragmentos. La recuperació
 
 ## 4. Herramientas implementadas
 
-Actualmente se implementaron y probaron individualmente cinco tools de LangChain.
+Se implementaron cinco tools de LangChain.
 
 | Tool | Función |
 |---|---|
 | `buscar_contexto_narrativo` | Recupera información del corpus utilizando RAG. |
-| `consultar_estado_partida` | Consulta decisiones, inventario y progreso de una partida. |
-| `registrar_decision` | Valida y guarda la opción elegida por el usuario. |
-| `guardar_capitulo` | Almacena el título, texto y tres opciones de un capítulo. |
-| `generar_pdf_historia` | Genera un PDF con los capítulos y decisiones guardados. |
+| `consultar_estado_partida` | Devuelve capítulos, decisiones, inventario, pistas y el siguiente paso de la partida en curso. |
+| `registrar_decision` | Valida y guarda la opción elegida (1, 2 o 3) y actualiza inventario y pistas (`objetos_recogidos`, `objetos_usados`, `pistas_descubiertas`). |
+| `guardar_capitulo` | Almacena el título, texto y opciones de un capítulo: tres opciones en los capítulos 1 a 4; el capítulo 5 es el desenlace y no lleva opciones. |
+| `generar_pdf_historia` | Genera el PDF de la historia. Solo funciona cuando la historia terminó. |
 
 Las herramientas utilizan el decorador `@tool` de LangChain.
 
-**Estado:** las cinco herramientas funcionan individualmente. Falta comprobar su funcionamiento coordinado durante una aventura completa.
+**El id de la partida no es un argumento de las tools.** La aplicación lo fija en el contexto de cada ejecución (`ContextoPartida`, mediante `context_schema` y `ToolRuntime`) y las tools lo leen de ahí. El LLM no lo ve ni lo elige. Las tools de escritura devuelven `siguiente_paso`, que le indica al agente qué corresponde hacer, y los errores de validación vuelven como `{"error": ...}` sin cortar el flujo.
+
+**Estado:** las cinco herramientas están probadas por separado y también en un flujo de punta a punta con un modelo falso (ver sección de tests). Falta comprobar el uso coordinado con un LLM real.
 
 ## 5. Estado y memoria
 
@@ -92,25 +99,33 @@ Se utilizan dos mecanismos diferentes:
 
 **Estado estructurado (JSON)**
 
-Cada partida tiene un identificador único y almacena:
+Cada partida tiene un identificador único (uuid) y almacena:
 
-- Capítulo actual.
+- Capítulo actual (cantidad de decisiones tomadas).
 - Capítulos generados.
-- Decisiones tomadas.
+- Decisiones tomadas, con los objetos y pistas que implicó cada una.
 - Inventario.
 - Pistas descubiertas.
+- Si la partida está finalizada.
 
-Las funciones de creación, consulta y registro de decisiones fueron probadas. Todavía falta implementar la actualización automática del inventario y las consecuencias narrativas.
+Las reglas se hacen cumplir en código (`estado_partida.py`) y no solo en el prompt:
+
+- La historia tiene 5 capítulos. Los capítulos 1 a 4 llevan tres opciones; el capítulo 5 es el desenlace, no lleva opciones y deja la partida finalizada. Después no se puede escribir nada más.
+- No se puede decidir sin un capítulo pendiente ni escribir un capítulo con otro pendiente.
+- Los objetos solo pueden ser los del catálogo (`CATALOGO_OBJETOS`, alineado con `corpus/pistas_y_objetos.md`), solo se pueden usar si están en el inventario y no se pueden recoger dos veces.
+- El id de la partida se valida (uuid hexadecimal) y el JSON se escribe de forma atómica.
+
+La app crea la partida al abrir la sesión y usa su id también como `thread_id` del checkpointer. El panel lateral muestra capítulos, inventario y pistas.
+
+Todavía falta implementar consecuencias narrativas más complejas, por ejemplo puertas que exijan una llave concreta.
 
 **Memoria conversacional**
 
 El agente está configurado con `InMemorySaver`, un checkpointer de LangChain.
 
-Permite conservar el historial por `thread_id` mientras la memoria del proceso siga disponible.
+Permite conservar el historial por `thread_id` mientras la memoria del proceso siga disponible. El estado JSON, en cambio, sobrevive a un reinicio.
 
 Su funcionamiento con el modelo real todavía está pendiente de pruebas.
-
-También falta vincular correctamente el identificador de la partida JSON con la sesión del usuario en Streamlit.
 
 ## 6. Generación de PDF
 
@@ -123,9 +138,11 @@ Los archivos incluyen:
 - Narración de cada capítulo.
 - Decisiones tomadas por el usuario.
 
-**Estado:** generación probada correctamente con una partida de ejemplo.
+El PDF solo se genera cuando la historia terminó (capítulo 5 guardado).
 
-Pendiente: incorporar la descarga desde Streamlit y probar una historia completa de cinco capítulos.
+**Estado:** generación probada con una historia completa de cinco capítulos (test automático).
+
+Pendiente: incorporar la descarga desde Streamlit. La fuente está tomada de una ruta del sistema (`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`), por lo que hoy solo funciona en Linux.
 
 ## 7. Instalación
 
@@ -189,7 +206,18 @@ streamlit run app.py
 
 La interfaz requiere configurar previamente la API de DeepSeek.
 
-**Advertencia:** la integración completa entre Streamlit, el estado JSON y las herramientas está en desarrollo. La aplicación todavía no está validada como experiencia completa de juego.
+Al abrir la app se crea una partida nueva. Con el botón "Nueva partida" se crea otra.
+
+**Advertencia:** el flujo completo todavía no se probó con un LLM real. La aplicación no está validada como experiencia completa de juego.
+
+### Tests
+
+Las pruebas no usan LLM ni red. Incluyen un flujo de punta a punta con un modelo falso que emite llamadas a tools.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## 9. Estado actual del desarrollo
 
@@ -205,24 +233,33 @@ La interfaz requiere configurar previamente la API de DeepSeek.
 - [x] Guardado de capítulos.
 - [x] Generación de PDF.
 - [x] Pruebas individuales de las cinco tools.
+- [x] Estado JSON integrado con la sesión de Streamlit (el id de partida es también el `thread_id`).
+- [x] Id de partida fijado por la aplicación, no por el LLM.
+- [x] Finalización garantizada en el capítulo 5 (desenlace sin opciones).
+- [x] Inventario y pistas con validación (catálogo de objetos).
+- [x] PDF solo al finalizar la historia.
+- [x] Tests automáticos sin LLM, incluido un flujo con modelo falso.
 
-### Implementado, pendiente de pruebas integrales
+### Implementado, pendiente de pruebas con un LLM real
 
 - [ ] Ejecución de `create_agent` con DeepSeek.
-- [ ] Uso coordinado de las cinco herramientas.
+- [ ] Uso coordinado de las cinco herramientas siguiendo el prompt.
 - [ ] Memoria conversacional mediante checkpointer.
 - [ ] Streaming de herramientas en Streamlit.
+- [ ] Que el modelo respete el catálogo de objetos.
 
 ### Pendiente de desarrollar
 
-- [ ] Integrar el estado JSON con la sesión de Streamlit.
-- [ ] Implementar consecuencias persistentes de las decisiones.
-- [ ] Gestionar inventario y pistas descubiertas.
-- [ ] Garantizar la finalización de la historia en cinco capítulos.
-- [ ] Implementar controles para evitar inconsistencias narrativas.
-- [ ] Incorporar descarga de PDF desde la interfaz.
-- [ ] Manejar errores del modelo y sus herramientas.
-- [ ] Realizar pruebas completas con diferentes recorridos.
+- [ ] Confirmar el nombre del modelo de DeepSeek (`deepseek-flash` no está verificado).
+- [ ] Tool con servicio externo (por ejemplo, imágenes).
+- [ ] Opciones como botones y descarga del PDF en la interfaz.
+- [ ] Mostrar el razonamiento del modelo, si el proveedor lo expone.
+- [ ] Manejar errores 429 y reintentos con espera.
+- [ ] Reglas de consecuencias más complejas (por ejemplo, puertas que exigen una llave).
+- [ ] Ampliar el corpus y evitar que el RAG devuelva pistas todavía inaccesibles.
+- [ ] Persistir la conversación entre reinicios.
+- [ ] Fuente del PDF independiente del sistema operativo.
+- [ ] Probar la instalación desde cero.
 - [ ] Completar documentación y presentación final.
 
 ## 10. Consideraciones técnicas
@@ -232,17 +269,15 @@ La interfaz requiere configurar previamente la API de DeepSeek.
 - El JSON conserva los acontecimientos específicos de cada historia.
 - Los embeddings se generan localmente y no consumen tokens de DeepSeek.
 - Las herramientas se implementaron de forma modular para permitir pruebas independientes.
-- El modelo no debe modificar el estado de una partida sin pasar por las validaciones correspondientes.
+- El modelo no puede modificar el estado de una partida sin pasar por las validaciones de `estado_partida.py`, y no elige el id de la partida.
 - La generación de imágenes queda fuera del alcance inicial.
 
 ## 11. Próximos pasos
 
 La prioridad es conectar el modelo de lenguaje y conseguir que el agente utilice las herramientas durante una historia real.
 
-Después se completará la integración con Streamlit, la lógica de decisiones, la memoria y la descarga del PDF.
-
-Finalmente se realizarán las pruebas, documentación y preparación de la exposición.
+Después se agregará una tool con servicio externo, se completará la interfaz (opciones, descarga del PDF), el manejo de errores del proveedor y, finalmente, las pruebas completas, la documentación y la preparación de la exposición.
 
 ---
 
-**Estado general:** prototipo técnico en desarrollo, con RAG, persistencia de partidas, herramientas y generación de PDF probados individualmente. Todavía no existe una demo integral validada.
+**Estado general:** prototipo técnico en desarrollo. El flujo de la partida (estado, cierre en cinco capítulos, inventario, PDF) está implementado y probado con tests automáticos y un modelo falso. Todavía no existe una demo integral validada con un LLM real.
