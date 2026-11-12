@@ -1,4 +1,4 @@
-"""Tools del agente: RAG del mundo narrativo, estado de la partida y exportación a PDF.
+"""Tools del agente: RAG del mundo narrativo, estado de la partida, imágenes y exportación a PDF.
 
 El id de la partida NO es un argumento de las tools: lo fija la aplicación en el
 contexto de cada ejecución (ContextoPartida) y las tools lo leen de ahí. Así el LLM
@@ -14,6 +14,7 @@ from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
 import estado_partida
+import imagenes
 from generar_pdf import generar_pdf
 from ingestar import DB_DIR, MODELO_EMBEDDINGS, COLECCION
 
@@ -110,3 +111,25 @@ def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
         return generar_pdf(runtime.context.id_partida)
     except (ValueError, OSError) as e:
         return f"Error al generar PDF: {e}"
+
+
+@tool
+def buscar_imagen_capitulo(consulta: str, runtime: ToolRuntime[ContextoPartida]) -> dict:
+    """Busca en Unsplash una foto de ambiente para el capítulo que acabás de guardar y la adjunta (queda en la partida y en el PDF). Llamala una vez por capítulo, justo después de guardar_capitulo.
+    - consulta: 3 a 5 palabras EN INGLÉS sobre el lugar o clima de la escena, por ejemplo "foggy old mansion library" o "rainy greenhouse glass". No uses nombres de personas.
+    Si devuelve error, reintentá UNA vez con una consulta más genérica (por ejemplo "foggy mansion"); si vuelve a fallar, seguí sin imagen."""
+    try:
+        id_partida = runtime.context.id_partida
+        # Se valida antes de llamar a la API para no gastar consultas si no corresponde.
+        numero, ya_usadas = estado_partida.capitulo_para_imagen(id_partida)
+        destino = estado_partida.ruta_imagen_capitulo(id_partida, numero)
+        foto = imagenes.obtener_imagen(consulta, destino, excluir_ids=ya_usadas)
+        estado_partida.adjuntar_imagen(id_partida, foto)
+        return {
+            "ok": True,
+            "capitulo": numero,
+            "autor": foto["autor"],
+            "descripcion": foto["descripcion"],
+        }
+    except (ValueError, OSError) as e:
+        return {"error": str(e)}

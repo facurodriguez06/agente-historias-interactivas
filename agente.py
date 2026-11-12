@@ -14,6 +14,7 @@ from herramientas import (
     consultar_estado_partida,
     registrar_decision,
     guardar_capitulo,
+    buscar_imagen_capitulo,
     generar_pdf_historia,
 )
 
@@ -33,13 +34,16 @@ FLUJO OBLIGATORIO
    guardarlo con guardar_capitulo ANTES de mostrárselo.
 2. Cuando el usuario elige una opción del capítulo pendiente: registrar_decision (con los objetos
    y pistas que esa decisión implica), buscar_contexto_narrativo, y guardar_capitulo del capítulo siguiente.
-3. En el capítulo {TOTAL_CAPITULOS} usá guardar_capitulo con opciones=[]. Luego generá el PDF con
+3. Después de CADA guardar_capitulo llamá buscar_imagen_capitulo, una vez, con 3 a 5 palabras en inglés
+   sobre el lugar de la escena (por ejemplo "foggy old mansion library"). Si da error, reintentá una vez con
+   una consulta más genérica; si vuelve a fallar, seguí sin imagen. No describas la imagen en el texto.
+4. En el capítulo {TOTAL_CAPITULOS} usá guardar_capitulo con opciones=[] y pedí su imagen. Luego generá el PDF con
    generar_pdf_historia, contale al usuario que la historia terminó y pasale la ruta del archivo.
-4. Si el usuario pregunta por algo ya ocurrido (decisiones, objetos, pistas), usá
+5. Si el usuario pregunta por algo ya ocurrido (decisiones, objetos, pistas), usá
    consultar_estado_partida y respondé SIN avanzar de capítulo ni llamar a registrar_decision ni guardar_capitulo.
-5. Si hay un capítulo pendiente y el usuario no eligió una opción clara, pedile que elija 1, 2 o 3.
-6. Si una tool devuelve un error, corregí el pedido y reintentá; no le muestres errores técnicos al usuario.
-7. Una vez terminada la historia no escribas capítulos nuevos: ofrecé empezar una partida nueva.
+6. Si hay un capítulo pendiente y el usuario no eligió una opción clara, pedile que elija 1, 2 o 3.
+7. Si una tool devuelve un error, corregí el pedido y reintentá; no le muestres errores técnicos al usuario.
+8. Una vez terminada la historia no escribas capítulos nuevos: ofrecé empezar una partida nueva.
 
 RESPUESTA AL USUARIO
 Mostrá "Capítulo N: título", el texto (máximo 180 palabras) y, si no es el desenlace, las tres opciones
@@ -72,6 +76,7 @@ def crear_agente():
             consultar_estado_partida,
             registrar_decision,
             guardar_capitulo,
+            buscar_imagen_capitulo,
             generar_pdf_historia,
         ],
         system_prompt=INSTRUCCIONES,

@@ -2,8 +2,9 @@
 import streamlit as st
 from langchain_core.messages import AIMessage, ToolMessage
 from agente import crear_agente
-from estado_partida import consultar_estado, crear_partida
+from estado_partida import archivo_de_imagen, consultar_estado, crear_partida
 from herramientas import ContextoPartida
+from imagenes import URL_UNSPLASH, con_utm
 
 st.set_page_config(page_title="Historias interactivas", page_icon="📖", layout="centered")
 st.title("📖 Historias interactivas")
@@ -12,8 +13,12 @@ st.caption("Prototipo Unidad 5 · RAG + create_agent + checkpointer")
 # Un solo identificador por partida: es el id del JSON y también el thread_id del checkpointer.
 if "id_partida" not in st.session_state:
     st.session_state.id_partida = crear_partida()
+# Cada entrada: (rol, texto, imagenes) con imagenes = [(ruta, pie de foto)].
 if "historial_visible" not in st.session_state:
     st.session_state.historial_visible = []
+# Capítulos cuya imagen ya se mostró en el chat (para no repetirla)
+if "imagenes_mostradas" not in st.session_state:
+    st.session_state.imagenes_mostradas = set()
 if "agente" not in st.session_state:
     try:
         st.session_state.agente = crear_agente()
@@ -27,6 +32,7 @@ with st.sidebar:
     if st.button("Nueva partida"):
         st.session_state.id_partida = crear_partida()
         st.session_state.historial_visible = []
+        st.session_state.imagenes_mostradas = set()
         st.rerun()
     st.info("La memoria de la conversación dura mientras está abierta la sesión de Streamlit; "
             "el estado de la partida se guarda en partidas/.")
@@ -52,13 +58,37 @@ def mostrar_estado():
 
 mostrar_estado()
 
-for rol, contenido in st.session_state.historial_visible:
+
+def imagenes_nuevas():
+    """Imágenes de capítulos que todavía no se mostraron: [(ruta, pie de foto)]."""
+    try:
+        estado = consultar_estado(st.session_state.id_partida)
+    except (ValueError, OSError):
+        return []
+    nuevas = []
+    for capitulo in estado["capitulos"]:
+        ruta = archivo_de_imagen(capitulo)
+        if ruta is None or capitulo["numero"] in st.session_state.imagenes_mostradas:
+            continue
+        st.session_state.imagenes_mostradas.add(capitulo["numero"])
+        imagen = capitulo["imagen"]
+        pie = (
+            f"Foto: [{imagen['autor']}]({con_utm(imagen['url_autor'])}) / "
+            f"[Unsplash]({con_utm(URL_UNSPLASH)})"
+        )
+        nuevas.append((str(ruta), pie))
+    return nuevas
+
+
+for rol, contenido, imagenes in st.session_state.historial_visible:
     with st.chat_message(rol):
         st.markdown(contenido)
+        for ruta, pie in imagenes:
+            st.image(ruta, caption=pie)
 
 pregunta = st.chat_input("Ej.: Empezá una historia de misterio en la mansión")
 if pregunta:
-    st.session_state.historial_visible.append(("user", pregunta))
+    st.session_state.historial_visible.append(("user", pregunta, []))
     with st.chat_message("user"):
         st.markdown(pregunta)
 
@@ -88,5 +118,8 @@ if pregunta:
                 respuesta = f"Ocurrió un error: `{type(exc).__name__}: {exc}`"
                 status.update(label="Error en el agente", state="error")
         st.markdown(respuesta or "El agente no produjo una respuesta de texto.")
-    st.session_state.historial_visible.append(("assistant", respuesta))
+        imagenes = imagenes_nuevas()
+        for ruta, pie in imagenes:
+            st.image(ruta, caption=pie)
+    st.session_state.historial_visible.append(("assistant", respuesta, imagenes))
     mostrar_estado()

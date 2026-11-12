@@ -11,6 +11,9 @@ Reglas que se hacen cumplir acá (no dependen de que el LLM las respete):
 - Una partida finalizada no admite más escrituras.
 - Un objeto solo entra al inventario si figura en el catálogo, y solo puede usarse
   si está en el inventario.
+- Cada capítulo admite una sola imagen, siempre la del último capítulo guardado.
+  Adjuntar una imagen no es escribir la historia: se puede hacer también con la
+  partida finalizada (el desenlace se finaliza al guardarse y también lleva imagen).
 """
 
 import json
@@ -276,6 +279,7 @@ def guardar_capitulo(id_partida, titulo, texto, opciones):
         "titulo": titulo,
         "texto": texto,
         "opciones": opciones,
+        "imagen": None,
     }
 
     estado["capitulos"].append(capitulo)
@@ -286,5 +290,71 @@ def guardar_capitulo(id_partida, titulo, texto, opciones):
     return {
         "capitulo_guardado": numero,
         "finalizada": estado["finalizada"],
+        "imagen_pendiente": (
+            "Antes de mostrar el capítulo, pedí su imagen con buscar_imagen_capitulo "
+            "(si falla, seguí sin imagen)."
+        ),
         "siguiente_paso": siguiente_paso(estado),
     }
+
+
+# ---------------------------------------------------------------------------
+# Imágenes de los capítulos
+# ---------------------------------------------------------------------------
+
+
+def ruta_imagen_capitulo(id_partida, numero):
+    """Dónde se guarda la imagen del capítulo `numero` (dentro de la carpeta de partidas)."""
+    _validar_id(id_partida)
+    return CARPETA_PARTIDAS / "imagenes" / id_partida / f"capitulo_{numero}.jpg"
+
+
+def capitulo_para_imagen(id_partida):
+    """Valida que se pueda adjuntar una imagen y devuelve (numero, ids de fotos ya usadas).
+
+    Se llama ANTES de consultar a Unsplash para no gastar cuota si no corresponde.
+    """
+    estado = consultar_estado(id_partida)
+    if not estado["capitulos"]:
+        raise ValueError("Todavía no hay ningún capítulo guardado")
+
+    ultimo = estado["capitulos"][-1]
+    if ultimo.get("imagen"):
+        raise ValueError(f"El capítulo {ultimo['numero']} ya tiene imagen")
+
+    usadas = [
+        c["imagen"]["id_foto"] for c in estado["capitulos"] if c.get("imagen")
+    ]
+    return ultimo["numero"], usadas
+
+
+def adjuntar_imagen(id_partida, foto):
+    """Asocia al último capítulo la foto ya descargada con `ruta_imagen_capitulo`.
+
+    `foto` trae id_foto, autor, url_autor, url_foto y descripcion (ver imagenes.py).
+    """
+    numero, _ = capitulo_para_imagen(id_partida)
+    archivo = ruta_imagen_capitulo(id_partida, numero)
+    if not archivo.exists():
+        raise ValueError("No se encontró el archivo de la imagen descargada")
+
+    estado = consultar_estado(id_partida)
+    estado["capitulos"][-1]["imagen"] = {
+        "archivo": archivo.relative_to(CARPETA_PARTIDAS).as_posix(),
+        "id_foto": str(foto["id_foto"]),
+        "autor": str(foto["autor"]),
+        "url_autor": str(foto["url_autor"]),
+        "url_foto": str(foto["url_foto"]),
+        "descripcion": str(foto.get("descripcion", "")),
+    }
+    guardar_estado(estado)
+    return numero
+
+
+def archivo_de_imagen(capitulo):
+    """Ruta del archivo de imagen de un capítulo, o None si no tiene o falta el archivo."""
+    imagen = capitulo.get("imagen")
+    if not imagen:
+        return None
+    ruta = CARPETA_PARTIDAS / imagen["archivo"]
+    return ruta if ruta.exists() else None
