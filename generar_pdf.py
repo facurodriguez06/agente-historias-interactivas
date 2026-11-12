@@ -1,7 +1,7 @@
 from pathlib import Path
 from html import escape
 
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, KeepTogether
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
@@ -61,12 +61,16 @@ def generar_pdf(id_partida):
         estilos[nombre].fontName = "DejaVu"
 
     estilo_credito = ParagraphStyle("Credito", parent=estilos["Normal"], fontSize=7)
+    # Un título nunca queda solo al pie de una página
+    estilos["Heading2"].keepWithNext = 1
 
     elementos = [Paragraph("Mi historia de misterio", estilos["Title"]), Spacer(1, 30)]
 
     for capitulo in estado["capitulos"]:
-        elementos.append(Paragraph(escape(capitulo["titulo"]), estilos["Heading2"]))
-        elementos.extend(_imagen_del_capitulo(capitulo, estilo_credito))
+        # Título, imagen y crédito van juntos: si no entran en la página, pasan enteros a la siguiente
+        encabezado = [Paragraph(escape(capitulo["titulo"]), estilos["Heading2"])]
+        encabezado.extend(_imagen_del_capitulo(capitulo, estilo_credito))
+        elementos.append(KeepTogether(encabezado))
 
         elementos.append(
             Paragraph(

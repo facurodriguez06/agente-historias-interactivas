@@ -242,3 +242,36 @@ def test_el_segundo_capitulo_no_repite_foto(partida, unsplash):
     correr(agente, partida, "Elijo 1")
     capitulos = ep.consultar_estado(partida)["capitulos"]
     assert [c["imagen"]["id_foto"] for c in capitulos] == ["foto1", "foto2"]
+
+
+@pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
+def test_titulo_imagen_y_credito_van_juntos_en_el_pdf(partida, tmp_path, monkeypatch):
+    """Regresión: un título no puede quedar solo al pie de una página con su imagen en la siguiente."""
+    from reportlab.platypus import Image, KeepTogether, Paragraph
+
+    monkeypatch.chdir(tmp_path)
+    for numero in range(1, 5):
+        escribir_capitulo(partida)
+        adjuntar(partida, f"foto{numero}")
+        ep.registrar_decision(partida, 1)
+    escribir_capitulo(partida)
+    adjuntar(partida, "foto5")
+
+    capturado = {}
+
+    class DocumentoEspia:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, elementos):
+            capturado["elementos"] = elementos
+
+    monkeypatch.setattr(generar_pdf, "SimpleDocTemplate", DocumentoEspia)
+    generar_pdf.generar_pdf(partida)
+
+    bloques = [e for e in capturado["elementos"] if isinstance(e, KeepTogether)]
+    assert len(bloques) == 5
+    for bloque in bloques:
+        contenido = bloque._content
+        assert isinstance(contenido[0], Paragraph)  # el título
+        assert any(isinstance(c, Image) for c in contenido)
