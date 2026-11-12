@@ -11,6 +11,9 @@ Reglas que se hacen cumplir acá (no dependen de que el LLM las respete):
 - Una partida finalizada no admite más escrituras.
 - Un objeto solo entra al inventario si figura en el catálogo, y solo puede usarse
   si está en el inventario.
+- Cada capítulo admite una sola imagen, siempre la del último capítulo guardado.
+  Adjuntar una imagen no es escribir la historia: se puede hacer también con la
+  partida finalizada (el desenlace se finaliza al guardarse y también lleva imagen).
 """
 
 import json
@@ -20,6 +23,8 @@ import tempfile
 import unicodedata
 import uuid
 from pathlib import Path
+
+from imagenes import es_url_de_imagen
 
 CARPETA_PARTIDAS = Path("partidas")
 
@@ -276,6 +281,7 @@ def guardar_capitulo(id_partida, titulo, texto, opciones):
         "titulo": titulo,
         "texto": texto,
         "opciones": opciones,
+        "imagen": None,
     }
 
     estado["capitulos"].append(capitulo)
@@ -286,5 +292,62 @@ def guardar_capitulo(id_partida, titulo, texto, opciones):
     return {
         "capitulo_guardado": numero,
         "finalizada": estado["finalizada"],
+        "imagen_pendiente": (
+            "Antes de mostrar el capítulo, pedí su imagen con buscar_imagen_capitulo "
+            "(si falla, seguí sin imagen)."
+        ),
         "siguiente_paso": siguiente_paso(estado),
     }
+
+
+# ---------------------------------------------------------------------------
+# Imágenes de los capítulos
+# ---------------------------------------------------------------------------
+
+
+def capitulo_para_imagen(id_partida):
+    """Valida que se pueda adjuntar una imagen y devuelve (numero, ids de fotos ya usadas).
+
+    Se llama ANTES de consultar a Unsplash para no gastar cuota si no corresponde.
+    """
+    estado = consultar_estado(id_partida)
+    if not estado["capitulos"]:
+        raise ValueError("Todavía no hay ningún capítulo guardado")
+
+    ultimo = estado["capitulos"][-1]
+    if ultimo.get("imagen"):
+        raise ValueError(f"El capítulo {ultimo['numero']} ya tiene imagen")
+
+    usadas = [
+        c["imagen"]["id_foto"] for c in estado["capitulos"] if c.get("imagen")
+    ]
+    return ultimo["numero"], usadas
+
+
+def adjuntar_imagen(id_partida, foto):
+    """Asocia al último capítulo una foto de Unsplash (se muestra por hotlinking).
+
+    `foto` trae id_foto, url_imagen, autor, url_autor, url_foto y descripcion
+    (ver imagenes.obtener_imagen). No se guarda ningún archivo: solo la URL original.
+    """
+    numero, _ = capitulo_para_imagen(id_partida)
+    if not es_url_de_imagen(foto.get("url_imagen")):
+        raise ValueError("La URL de la imagen no es de Unsplash")
+
+    estado = consultar_estado(id_partida)
+    estado["capitulos"][-1]["imagen"] = {
+        "url_imagen": str(foto["url_imagen"]),
+        "id_foto": str(foto["id_foto"]),
+        "autor": str(foto["autor"]),
+        "url_autor": str(foto["url_autor"]),
+        "url_foto": str(foto["url_foto"]),
+        "descripcion": str(foto.get("descripcion", "")),
+    }
+    guardar_estado(estado)
+    return numero
+
+
+def url_de_imagen(capitulo):
+    """URL (hotlink) de la imagen de un capítulo, o None si no tiene."""
+    imagen = capitulo.get("imagen")
+    return imagen["url_imagen"] if imagen else None
