@@ -33,6 +33,7 @@ agente-historias-interactivas/
 ├── estado_partida.py
 ├── ingestar.py
 ├── generar_pdf.py
+├── imagenes.py
 ├── tests/
 ├── pytest.ini
 ├── requirements.txt
@@ -46,10 +47,11 @@ agente-historias-interactivas/
 
 - `agente.py`: configura el modelo DeepSeek, las herramientas disponibles, el prompt y el checkpointer.
 - `app.py`: implementa la interfaz web mediante Streamlit.
-- `herramientas.py`: contiene las cinco tools disponibles para el agente y `ContextoPartida`, que lleva el id de la partida a las tools.
+- `herramientas.py`: contiene las seis tools disponibles para el agente y `ContextoPartida`, que lleva el id de la partida a las tools.
 - `estado_partida.py`: administra los estados de partida mediante archivos JSON y hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre).
 - `ingestar.py`: procesa los documentos y construye la base vectorial RAG.
-- `generar_pdf.py`: crea el PDF a partir de los capítulos y decisiones guardados.
+- `generar_pdf.py`: crea el PDF a partir de los capítulos, decisiones e imágenes guardados.
+- `imagenes.py`: cliente de la API de Unsplash (búsqueda, descarga y atribución de la foto de cada capítulo).
 - `corpus/`: contiene los documentos que definen el universo narrativo.
 - `tests/`: pruebas automáticas que no usan LLM ni red.
 
@@ -77,7 +79,7 @@ La ingesta inicial procesó 3 documentos y generó 8 fragmentos. La recuperació
 
 ## 4. Herramientas implementadas
 
-Se implementaron cinco tools de LangChain.
+Se implementaron seis tools de LangChain.
 
 | Tool | Función |
 |---|---|
@@ -85,13 +87,16 @@ Se implementaron cinco tools de LangChain.
 | `consultar_estado_partida` | Devuelve capítulos, decisiones, inventario, pistas y el siguiente paso de la partida en curso. |
 | `registrar_decision` | Valida y guarda la opción elegida (1, 2 o 3) y actualiza inventario y pistas (`objetos_recogidos`, `objetos_usados`, `pistas_descubiertas`). |
 | `guardar_capitulo` | Almacena el título, texto y opciones de un capítulo: tres opciones en los capítulos 1 a 4; el capítulo 5 es el desenlace y no lleva opciones. |
-| `generar_pdf_historia` | Genera el PDF de la historia. Solo funciona cuando la historia terminó. |
+| `buscar_imagen_capitulo` | **Servicio externo (API de Unsplash).** Busca una foto de ambiente para el capítulo recién guardado, la descarga y la adjunta al capítulo, con el crédito del fotógrafo. |
+| `generar_pdf_historia` | Genera el PDF ilustrado de la historia. Solo funciona cuando la historia terminó. |
 
 Las herramientas utilizan el decorador `@tool` de LangChain.
 
 **El id de la partida no es un argumento de las tools.** La aplicación lo fija en el contexto de cada ejecución (`ContextoPartida`, mediante `context_schema` y `ToolRuntime`) y las tools lo leen de ahí. El LLM no lo ve ni lo elige. Las tools de escritura devuelven `siguiente_paso`, que le indica al agente qué corresponde hacer, y los errores de validación vuelven como `{"error": ...}` sin cortar el flujo.
 
-**Estado:** las cinco herramientas están probadas por separado y también en un flujo de punta a punta con un modelo falso (ver sección de tests). Falta comprobar el uso coordinado con un LLM real.
+**Imágenes (`buscar_imagen_capitulo`).** El agente la llama una vez por capítulo, justo después de `guardar_capitulo`, con una consulta corta en inglés sobre el lugar de la escena (por ejemplo, "foggy old mansion library"). Cada capítulo admite una sola imagen, siempre la del último capítulo guardado, y no se repite una foto dentro de la misma historia. Si Unsplash falla (sin key, sin red, límite de consultas, sin resultados), la tool devuelve un error y la historia sigue sin imagen. La imagen se muestra en el chat con su crédito y se incluye en el PDF, que es el entregable final.
+
+**Estado:** las herramientas están probadas por separado y también en un flujo de punta a punta con un modelo falso (ver sección de tests). Falta comprobar el uso coordinado con un LLM real.
 
 ## 5. Estado y memoria
 
@@ -102,7 +107,7 @@ Se utilizan dos mecanismos diferentes:
 Cada partida tiene un identificador único (uuid) y almacena:
 
 - Capítulo actual (cantidad de decisiones tomadas).
-- Capítulos generados.
+- Capítulos generados, cada uno con su imagen (archivo y datos de atribución).
 - Decisiones tomadas, con los objetos y pistas que implicó cada una.
 - Inventario.
 - Pistas descubiertas.
@@ -138,7 +143,7 @@ Los archivos incluyen:
 - Narración de cada capítulo.
 - Decisiones tomadas por el usuario.
 
-El PDF solo se genera cuando la historia terminó (capítulo 5 guardado).
+El PDF solo se genera cuando la historia terminó (capítulo 5 guardado). Cada capítulo lleva su imagen debajo del título, con el crédito ("Foto: autor / Unsplash", con enlaces). Si un capítulo no tiene imagen, sale sin ella.
 
 **Estado:** generación probada con una historia completa de cinco capítulos (test automático).
 
@@ -181,6 +186,19 @@ Crear un archivo `.env` en la raíz del proyecto:
 ```env
 DEEPSEEK_API_KEY=tu_clave
 ```
+
+Para las imágenes hace falta una Access Key de Unsplash (gratis):
+
+1. Crear una cuenta en [unsplash.com](https://unsplash.com) y una aplicación en [unsplash.com/oauth/applications](https://unsplash.com/oauth/applications).
+2. Copiar la **Access Key** (no hace falta el Secret) al `.env`:
+
+```env
+UNSPLASH_ACCESS_KEY=tu_access_key
+```
+
+Cada integrante usa su propia key: la cuota del modo demo (unas 50 consultas por hora) es por aplicación. Sin la key el resto de la app funciona; solo faltan las imágenes.
+
+Para probar la key sin correr toda la app: `python imagenes.py "foggy old mansion"` (descarga una foto a una carpeta temporal e imprime el autor).
 
 **Importante:** nunca subir `.env` ni claves reales a GitHub.
 
@@ -239,6 +257,7 @@ pytest
 - [x] Inventario y pistas con validación (catálogo de objetos).
 - [x] PDF solo al finalizar la historia.
 - [x] Tests automáticos sin LLM, incluido un flujo con modelo falso.
+- [x] Tool con servicio externo: imágenes de Unsplash, una por capítulo, mostradas en la UI e incluidas en el PDF (probada con la API real y con la red simulada en los tests).
 
 ### Implementado, pendiente de pruebas con un LLM real
 
@@ -247,11 +266,13 @@ pytest
 - [ ] Memoria conversacional mediante checkpointer.
 - [ ] Streaming de herramientas en Streamlit.
 - [ ] Que el modelo respete el catálogo de objetos.
+- [ ] Que el modelo pida la imagen de cada capítulo con consultas útiles.
 
 ### Pendiente de desarrollar
 
 - [ ] Confirmar el nombre del modelo de DeepSeek (`deepseek-flash` no está verificado).
-- [ ] Tool con servicio externo (por ejemplo, imágenes).
+- [ ] Más tools con servicio externo, si la cátedra lo requiere (por ejemplo, clima).
+- [ ] Confirmar con las pautas de Unsplash que guardar la foto para el PDF cumple sus condiciones de uso.
 - [ ] Opciones como botones y descarga del PDF en la interfaz.
 - [ ] Mostrar el razonamiento del modelo, si el proveedor lo expone.
 - [ ] Manejar errores 429 y reintentos con espera.
@@ -270,13 +291,13 @@ pytest
 - Los embeddings se generan localmente y no consumen tokens de DeepSeek.
 - Las herramientas se implementaron de forma modular para permitir pruebas independientes.
 - El modelo no puede modificar el estado de una partida sin pasar por las validaciones de `estado_partida.py`, y no elige el id de la partida.
-- La generación de imágenes queda fuera del alcance inicial.
+- Las imágenes vienen de la API de Unsplash (fotos de stock de ambiente), no se generan con IA: es más rápido y confiable, y la atribución al fotógrafo queda en el PDF y en la UI.
 
 ## 11. Próximos pasos
 
 La prioridad es conectar el modelo de lenguaje y conseguir que el agente utilice las herramientas durante una historia real.
 
-Después se agregará una tool con servicio externo, se completará la interfaz (opciones, descarga del PDF), el manejo de errores del proveedor y, finalmente, las pruebas completas, la documentación y la preparación de la exposición.
+Después se completará la interfaz (opciones, descarga del PDF), el manejo de errores del proveedor y, finalmente, las pruebas completas, la documentación y la preparación de la exposición.
 
 ---
 
