@@ -51,7 +51,7 @@ agente-historias-interactivas/
 - `estado_partida.py`: administra los estados de partida mediante archivos JSON y hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre).
 - `ingestar.py`: procesa los documentos y construye la base vectorial RAG.
 - `generar_pdf.py`: crea el PDF a partir de los capítulos, decisiones e imágenes guardados.
-- `imagenes.py`: cliente de la API de Unsplash (búsqueda, descarga y atribución de la foto de cada capítulo).
+- `imagenes.py`: cliente de la API de Unsplash (búsqueda y atribución de la foto de cada capítulo; las fotos se muestran por hotlinking).
 - `corpus/`: contiene los documentos que definen el universo narrativo.
 - `tests/`: pruebas automáticas que no usan LLM ni red.
 
@@ -87,14 +87,14 @@ Se implementaron seis tools de LangChain.
 | `consultar_estado_partida` | Devuelve capítulos, decisiones, inventario, pistas y el siguiente paso de la partida en curso. |
 | `registrar_decision` | Valida y guarda la opción elegida (1, 2 o 3) y actualiza inventario y pistas (`objetos_recogidos`, `objetos_usados`, `pistas_descubiertas`). |
 | `guardar_capitulo` | Almacena el título, texto y opciones de un capítulo: tres opciones en los capítulos 1 a 4; el capítulo 5 es el desenlace y no lleva opciones. |
-| `buscar_imagen_capitulo` | **Servicio externo (API de Unsplash).** Busca una foto de ambiente para el capítulo recién guardado, la descarga y la adjunta al capítulo, con el crédito del fotógrafo. |
+| `buscar_imagen_capitulo` | **Servicio externo (API de Unsplash).** Busca una foto de ambiente para el capítulo recién guardado, y guarda su URL original en el capítulo, con el crédito del fotógrafo. La foto se muestra por hotlinking, sin guardar copias. |
 | `generar_pdf_historia` | Genera el PDF ilustrado de la historia. Solo funciona cuando la historia terminó. |
 
 Las herramientas utilizan el decorador `@tool` de LangChain.
 
 **El id de la partida no es un argumento de las tools.** La aplicación lo fija en el contexto de cada ejecución (`ContextoPartida`, mediante `context_schema` y `ToolRuntime`) y las tools lo leen de ahí. El LLM no lo ve ni lo elige. Las tools de escritura devuelven `siguiente_paso`, que le indica al agente qué corresponde hacer, y los errores de validación vuelven como `{"error": ...}` sin cortar el flujo.
 
-**Imágenes (`buscar_imagen_capitulo`).** El agente la llama una vez por capítulo, justo después de `guardar_capitulo`, con una consulta corta en inglés sobre el lugar de la escena (por ejemplo, "foggy old mansion library"). Cada capítulo admite una sola imagen, siempre la del último capítulo guardado, y no se repite una foto dentro de la misma historia. Si Unsplash falla (sin key, sin red, límite de consultas, sin resultados), la tool devuelve un error y la historia sigue sin imagen. La imagen se muestra en el chat con su crédito y se incluye en el PDF, que es el entregable final.
+**Imágenes (`buscar_imagen_capitulo`).** El agente la llama una vez por capítulo, justo después de `guardar_capitulo`, con una consulta corta en inglés sobre el lugar de la escena (por ejemplo, "foggy old mansion library"). Cada capítulo admite una sola imagen, siempre la del último capítulo guardado, y no se repite una foto dentro de la misma historia. Si Unsplash falla (sin key, sin red, límite de consultas, sin resultados), la tool devuelve un error y la historia sigue sin imagen. **Hotlinking:** la partida guarda solo la URL original de la foto (`images.unsplash.com`, sin modificar) y la interfaz la carga directamente desde Unsplash, como piden sus pautas; la app no guarda copias de las fotos. Se avisa al endpoint de descarga de Unsplash al elegir cada foto. La imagen se muestra en el chat con su crédito y se incluye en el PDF, que es el entregable final.
 
 **Estado:** las herramientas están probadas por separado y también en un flujo de punta a punta con un modelo falso (ver sección de tests). Falta comprobar el uso coordinado con un LLM real.
 
@@ -107,7 +107,7 @@ Se utilizan dos mecanismos diferentes:
 Cada partida tiene un identificador único (uuid) y almacena:
 
 - Capítulo actual (cantidad de decisiones tomadas).
-- Capítulos generados, cada uno con su imagen (archivo y datos de atribución).
+- Capítulos generados, cada uno con su imagen (URL original de Unsplash y datos de atribución; no se guarda ningún archivo de imagen).
 - Decisiones tomadas, con los objetos y pistas que implicó cada una.
 - Inventario.
 - Pistas descubiertas.
@@ -143,7 +143,7 @@ Los archivos incluyen:
 - Narración de cada capítulo.
 - Decisiones tomadas por el usuario.
 
-El PDF solo se genera cuando la historia terminó (capítulo 5 guardado). Cada capítulo lleva su imagen debajo del título, con el crédito ("Foto: autor / Unsplash", con enlaces). Si un capítulo no tiene imagen, sale sin ella.
+El PDF solo se genera cuando la historia terminó (capítulo 5 guardado). Cada capítulo lleva su imagen debajo del título, con el crédito ("Foto: autor / Unsplash", con enlaces). Un PDF no puede hotlinkear, así que **al exportar** cada foto se descarga de su URL original y se incrusta desde memoria, sin guardarla en disco. Si un capítulo no tiene imagen, o no se puede descargar al exportar (por ejemplo, sin conexión), sale sin ella.
 
 **Estado:** generación probada con una historia completa de cinco capítulos (test automático).
 
@@ -198,7 +198,7 @@ UNSPLASH_ACCESS_KEY=tu_access_key
 
 Cada integrante usa su propia key: la cuota del modo demo (unas 50 consultas por hora) es por aplicación. Sin la key el resto de la app funciona; solo faltan las imágenes.
 
-Para probar la key sin correr toda la app: `python imagenes.py "foggy old mansion"` (descarga una foto a una carpeta temporal e imprime el autor).
+Para probar la key sin correr toda la app: `python imagenes.py "foggy old mansion"` (busca una foto, imprime su URL y el autor, y comprueba que la URL responda con una imagen).
 
 **Importante:** nunca subir `.env` ni claves reales a GitHub.
 
@@ -272,7 +272,7 @@ pytest
 
 - [ ] Confirmar el nombre del modelo de DeepSeek (`deepseek-flash` no está verificado).
 - [ ] Más tools con servicio externo, si la cátedra lo requiere (por ejemplo, clima).
-- [ ] Confirmar con las pautas de Unsplash que guardar la foto para el PDF cumple sus condiciones de uso.
+- [ ] Confirmar con las pautas de Unsplash el uso de las fotos dentro del PDF (se descargan solo al exportar, desde su URL original, y no se guardan).
 - [ ] Opciones como botones y descarga del PDF en la interfaz.
 - [ ] Mostrar el razonamiento del modelo, si el proveedor lo expone.
 - [ ] Manejar errores 429 y reintentos con espera.

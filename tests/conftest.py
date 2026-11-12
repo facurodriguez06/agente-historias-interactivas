@@ -31,10 +31,12 @@ def historia_completa(id_partida):
 # --- Unsplash simulado (los tests nunca usan la red ni una key real) ----------
 
 
-def jpeg_bytes(ancho=60, alto=40):
-    """Un JPEG válido y chico, generado en memoria."""
+def jpeg_bytes(ancho=60, alto=40, semilla=""):
+    """Un JPEG válido y chico, generado en memoria. Otra `semilla` da otro color."""
+    azar = sum(ord(c) for c in semilla) * 37
+    color = (azar % 200 + 30, (azar // 7) % 200 + 30, (azar // 13) % 200 + 30)
     salida = io.BytesIO()
-    Image.new("RGB", (ancho, alto), (120, 140, 160)).save(salida, format="JPEG")
+    Image.new("RGB", (ancho, alto), color).save(salida, format="JPEG")
     return salida.getvalue()
 
 
@@ -75,7 +77,7 @@ class UnsplashFalso:
         self.fotos = [foto_falsa("foto1"), foto_falsa("foto2")] if fotos is None else fotos
         self.estado_busqueda = estado_busqueda
         self.estado_imagen = estado_imagen
-        self.contenido = jpeg_bytes() if contenido is None else contenido
+        self.contenido = contenido  # None: una imagen distinta por URL, como las fotos reales
         self.error_red = error_red
         self.estado_aviso = estado_aviso
         self.llamadas = []
@@ -87,7 +89,8 @@ class UnsplashFalso:
         if url.endswith("/search/photos"):
             return RespuestaFalsa(self.estado_busqueda, {"results": self.fotos})
         if url.startswith("https://images.unsplash.com/"):
-            return RespuestaFalsa(self.estado_imagen, contenido=self.contenido)
+            contenido = jpeg_bytes(semilla=url) if self.contenido is None else self.contenido
+            return RespuestaFalsa(self.estado_imagen, contenido=contenido)
         if url.endswith("/download"):
             return RespuestaFalsa(self.estado_aviso, {"url": "x"})
         raise AssertionError(f"URL inesperada: {url}")

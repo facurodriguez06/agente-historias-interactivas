@@ -24,6 +24,8 @@ import unicodedata
 import uuid
 from pathlib import Path
 
+from imagenes import es_url_de_imagen
+
 CARPETA_PARTIDAS = Path("partidas")
 
 TOTAL_CAPITULOS = 5
@@ -303,12 +305,6 @@ def guardar_capitulo(id_partida, titulo, texto, opciones):
 # ---------------------------------------------------------------------------
 
 
-def ruta_imagen_capitulo(id_partida, numero):
-    """Dónde se guarda la imagen del capítulo `numero` (dentro de la carpeta de partidas)."""
-    _validar_id(id_partida)
-    return CARPETA_PARTIDAS / "imagenes" / id_partida / f"capitulo_{numero}.jpg"
-
-
 def capitulo_para_imagen(id_partida):
     """Valida que se pueda adjuntar una imagen y devuelve (numero, ids de fotos ya usadas).
 
@@ -329,18 +325,18 @@ def capitulo_para_imagen(id_partida):
 
 
 def adjuntar_imagen(id_partida, foto):
-    """Asocia al último capítulo la foto ya descargada con `ruta_imagen_capitulo`.
+    """Asocia al último capítulo una foto de Unsplash (se muestra por hotlinking).
 
-    `foto` trae id_foto, autor, url_autor, url_foto y descripcion (ver imagenes.py).
+    `foto` trae id_foto, url_imagen, autor, url_autor, url_foto y descripcion
+    (ver imagenes.obtener_imagen). No se guarda ningún archivo: solo la URL original.
     """
     numero, _ = capitulo_para_imagen(id_partida)
-    archivo = ruta_imagen_capitulo(id_partida, numero)
-    if not archivo.exists():
-        raise ValueError("No se encontró el archivo de la imagen descargada")
+    if not es_url_de_imagen(foto.get("url_imagen")):
+        raise ValueError("La URL de la imagen no es de Unsplash")
 
     estado = consultar_estado(id_partida)
     estado["capitulos"][-1]["imagen"] = {
-        "archivo": archivo.relative_to(CARPETA_PARTIDAS).as_posix(),
+        "url_imagen": str(foto["url_imagen"]),
         "id_foto": str(foto["id_foto"]),
         "autor": str(foto["autor"]),
         "url_autor": str(foto["url_autor"]),
@@ -351,10 +347,7 @@ def adjuntar_imagen(id_partida, foto):
     return numero
 
 
-def archivo_de_imagen(capitulo):
-    """Ruta del archivo de imagen de un capítulo, o None si no tiene o falta el archivo."""
+def url_de_imagen(capitulo):
+    """URL (hotlink) de la imagen de un capítulo, o None si no tiene."""
     imagen = capitulo.get("imagen")
-    if not imagen:
-        return None
-    ruta = CARPETA_PARTIDAS / imagen["archivo"]
-    return ruta if ruta.exists() else None
+    return imagen["url_imagen"] if imagen else None

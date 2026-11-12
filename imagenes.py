@@ -1,26 +1,30 @@
 """Cliente mínimo de la API de Unsplash para ilustrar los capítulos.
 
-Sigue las pautas de la API: se identifica con la Access Key, avisa al endpoint de
-descarga cuando usa una foto y deja los datos para dar crédito al fotógrafo
-(los enlaces al autor y a Unsplash llevan los parámetros utm que piden las pautas).
+Las fotos se muestran por hotlinking, como piden las pautas de la API: la partida guarda
+la URL original que devuelve Unsplash (images.unsplash.com) y la interfaz la carga directo
+desde ahí. No se guardan copias de las fotos en disco. Cuando se usa una foto se avisa
+al endpoint de descarga, y el crédito al fotógrafo lleva los parámetros utm que exigen
+las pautas.
+
+La única descarga ocurre al exportar el PDF (un PDF no puede hotlinkear): ahí cada foto se
+pide a su URL, se incrusta desde memoria y no se guarda nada.
 
 La key se lee de UNSPLASH_ACCESS_KEY (archivo .env). Todos los problemas esperables
-(sin key, sin red, límite de consultas, sin resultados, archivo que no es una imagen)
-se informan como ErrorImagen, que es un ValueError: las tools lo devuelven como error
-y la historia sigue sin imagen.
+(sin key, sin red, límite de consultas, sin resultados, URL o archivo inválido) se informan
+como ErrorImagen, que es un ValueError: las tools lo devuelven como error y la historia
+sigue sin imagen.
 
 Prueba rápida contra la API real:  python imagenes.py "foggy old mansion"
 """
 
 import os
-import tempfile
-from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 
 URL_API = "https://api.unsplash.com"
 URL_UNSPLASH = "https://unsplash.com"
+HOST_IMAGENES = "images.unsplash.com"
 UTM = {"utm_source": "agente_historias_interactivas", "utm_medium": "referral"}
 
 TIMEOUT_SEGUNDOS = 10
@@ -39,6 +43,15 @@ def con_utm(url):
     parametros = dict(parse_qsl(partes.query))
     parametros.update(UTM)
     return urlunparse(partes._replace(query=urlencode(parametros)))
+
+
+def es_url_de_imagen(url):
+    """Solo se aceptan URLs https del servidor de imágenes de Unsplash."""
+    try:
+        partes = urlparse(url)
+    except (ValueError, AttributeError):
+        return False
+    return partes.scheme == "https" and partes.hostname == HOST_IMAGENES
 
 
 def _clave():
@@ -101,47 +114,21 @@ def buscar_fotos(consulta):
     fotos = []
     for item in resultados:
         try:
-            fotos.append(
-                {
-                    "id": str(item["id"]),
-                    "url_imagen": item["urls"]["regular"],
-                    "url_descarga": item["links"]["download_location"],
-                    "url_foto": item["links"]["html"],
-                    "autor": item["user"]["name"],
-                    "url_autor": item["user"]["links"]["html"],
-                    "descripcion": item.get("alt_description") or item.get("description") or "",
-                }
-            )
+            foto = {
+                "id": str(item["id"]),
+                # Se usa tal cual la devuelve Unsplash (hotlinking): no se modifica
+                "url_imagen": item["urls"]["regular"],
+                "url_descarga": item["links"]["download_location"],
+                "url_foto": item["links"]["html"],
+                "autor": item["user"]["name"],
+                "url_autor": item["user"]["links"]["html"],
+                "descripcion": item.get("alt_description") or item.get("description") or "",
+            }
         except (KeyError, TypeError):
             continue  # resultado incompleto: se descarta
+        if es_url_de_imagen(foto["url_imagen"]):
+            fotos.append(foto)
     return fotos
-
-
-def descargar_imagen(url, destino):
-    """Descarga una foto JPEG a `destino` (escritura atómica, con tope de tamaño)."""
-    destino = Path(destino)
-    respuesta = _pedir(url, stream=True)
-    if respuesta.status_code != 200:
-        raise ErrorImagen(f"No se pudo descargar la imagen (código {respuesta.status_code})")
-
-    contenido = bytearray()
-    for bloque in respuesta.iter_content(chunk_size=64 * 1024):
-        contenido.extend(bloque)
-        if len(contenido) > MAX_BYTES_IMAGEN:
-            raise ErrorImagen("La imagen es demasiado grande")
-    if not contenido.startswith(b"\xff\xd8\xff"):
-        raise ErrorImagen("El archivo descargado no es una imagen JPEG")
-
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, ruta_temporal = tempfile.mkstemp(dir=destino.parent, suffix=".tmp")
-    try:
-        with os.fdopen(descriptor, "wb") as archivo:
-            archivo.write(contenido)
-        os.replace(ruta_temporal, destino)
-    except BaseException:
-        if os.path.exists(ruta_temporal):
-            os.unlink(ruta_temporal)
-        raise
 
 
 def _avisar_descarga(url_descarga):
@@ -152,10 +139,11 @@ def _avisar_descarga(url_descarga):
         pass
 
 
-def obtener_imagen(consulta, destino, excluir_ids=()):
-    """Busca una foto, la descarga a `destino` y devuelve sus datos de atribución.
+def obtener_imagen(consulta, excluir_ids=()):
+    """Busca una foto y devuelve su URL (hotlink) y sus datos de atribución.
 
-    Elige la primera foto cuyo id no esté en `excluir_ids` (para no repetir en una historia).
+    No descarga la foto. Elige la primera cuyo id no esté en `excluir_ids`
+    (para no repetir en una historia).
     """
     fotos = buscar_fotos(consulta)
     if not fotos:
@@ -169,15 +157,33 @@ def obtener_imagen(consulta, destino, excluir_ids=()):
         )
 
     foto = nuevas[0]
-    descargar_imagen(foto["url_imagen"], destino)
     _avisar_descarga(foto["url_descarga"])
     return {
         "id_foto": foto["id"],
+        "url_imagen": foto["url_imagen"],
         "autor": foto["autor"],
         "url_autor": foto["url_autor"],
         "url_foto": foto["url_foto"],
         "descripcion": foto["descripcion"],
     }
+
+
+def descargar_para_pdf(url):
+    """Descarga una foto a memoria para incrustarla en el PDF (no se guarda en disco)."""
+    if not es_url_de_imagen(url):
+        raise ErrorImagen("La URL de la imagen no es de Unsplash")
+    respuesta = _pedir(url, stream=True)
+    if respuesta.status_code != 200:
+        raise ErrorImagen(f"No se pudo descargar la imagen (código {respuesta.status_code})")
+
+    contenido = bytearray()
+    for bloque in respuesta.iter_content(chunk_size=64 * 1024):
+        contenido.extend(bloque)
+        if len(contenido) > MAX_BYTES_IMAGEN:
+            raise ErrorImagen("La imagen es demasiado grande")
+    if not contenido.startswith(b"\xff\xd8\xff"):
+        raise ErrorImagen("El archivo descargado no es una imagen JPEG")
+    return bytes(contenido)
 
 
 if __name__ == "__main__":
@@ -187,11 +193,12 @@ if __name__ == "__main__":
 
     load_dotenv()
     consulta = " ".join(sys.argv[1:]) or "foggy old mansion"
-    destino = Path(tempfile.mkdtemp()) / "prueba.jpg"
     try:
-        datos = obtener_imagen(consulta, destino)
+        datos = obtener_imagen(consulta)
+        peso = len(descargar_para_pdf(datos["url_imagen"]))
     except ErrorImagen as exc:
         sys.exit(f"ERROR: {exc}")
-    print(f"Foto guardada en {destino}")
+    print(f"URL de la foto (hotlink): {datos['url_imagen']}")
+    print(f"La URL responde con una imagen JPEG de {peso // 1024} KB")
     print(f"Autor: {datos['autor']} ({con_utm(datos['url_autor'])})")
     print(f"Descripción: {datos['descripcion']}")

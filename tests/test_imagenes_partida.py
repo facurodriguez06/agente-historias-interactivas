@@ -1,4 +1,4 @@
-"""Imágenes de los capítulos: estado, tool, PDF y flujo con el agente (red simulada)."""
+"""Imágenes de los capítulos (hotlinking): estado, tool, PDF y flujo con el agente (red simulada)."""
 
 import os
 
@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 import estado_partida as ep
-from conftest import UnsplashFalso, escribir_capitulo, historia_completa, instalar_unsplash, jpeg_bytes
+from conftest import UnsplashFalso, escribir_capitulo, historia_completa, instalar_unsplash
 from test_flujo_agente import ModeloGuionado, correr, crear, llamada, resultados_de_tools  # noqa: F401
 
 herramientas = pytest.importorskip("herramientas")
@@ -18,6 +18,7 @@ FUENTE = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 def foto(id_foto="foto1", autor="Ana Fotógrafa"):
     return {
         "id_foto": id_foto,
+        "url_imagen": f"https://images.unsplash.com/{id_foto}.jpg",
         "autor": autor,
         "url_autor": "https://unsplash.com/@ana",
         "url_foto": f"https://unsplash.com/photos/{id_foto}",
@@ -26,11 +27,7 @@ def foto(id_foto="foto1", autor="Ana Fotógrafa"):
 
 
 def adjuntar(id_partida, id_foto="foto1"):
-    """Simula lo que hace la tool: deja el archivo en su lugar y lo adjunta."""
-    numero, _ = ep.capitulo_para_imagen(id_partida)
-    archivo = ep.ruta_imagen_capitulo(id_partida, numero)
-    archivo.parent.mkdir(parents=True, exist_ok=True)
-    archivo.write_bytes(jpeg_bytes())
+    """Simula lo que hace la tool: adjunta una foto (solo su URL) al último capítulo."""
     return ep.adjuntar_imagen(id_partida, foto(id_foto))
 
 
@@ -57,7 +54,26 @@ def test_se_adjunta_al_ultimo_capitulo(partida):
     assert adjuntar(partida) == 1
     capitulo = ep.consultar_estado(partida)["capitulos"][0]
     assert capitulo["imagen"]["autor"] == "Ana Fotógrafa"
-    assert ep.archivo_de_imagen(capitulo).exists()
+    assert ep.url_de_imagen(capitulo) == "https://images.unsplash.com/foto1.jpg"
+
+
+def test_no_se_guarda_ningun_archivo_de_imagen(partida):
+    escribir_capitulo(partida)
+    adjuntar(partida)
+    assert not (ep.CARPETA_PARTIDAS / "imagenes").exists()
+    assert [p.suffix for p in ep.CARPETA_PARTIDAS.iterdir()] == [".json"]
+
+
+@pytest.mark.parametrize(
+    "url", ["https://evil.example/x.jpg", "http://images.unsplash.com/x.jpg", "", None]
+)
+def test_url_de_otro_host_no_se_adjunta(partida, url):
+    escribir_capitulo(partida)
+    ajena = foto()
+    ajena["url_imagen"] = url
+    with pytest.raises(ValueError, match="no es de Unsplash"):
+        ep.adjuntar_imagen(partida, ajena)
+    assert ep.consultar_estado(partida)["capitulos"][0]["imagen"] is None
 
 
 def test_un_capitulo_no_admite_dos_imagenes(partida):
@@ -76,26 +92,15 @@ def test_cada_capitulo_tiene_su_imagen_y_se_informan_las_usadas(partida):
     assert numero == 2 and usadas == ["foto1"]
 
 
-def test_sin_archivo_descargado_no_se_adjunta(partida):
-    escribir_capitulo(partida)
-    with pytest.raises(ValueError, match="archivo"):
-        ep.adjuntar_imagen(partida, foto())
-    assert ep.consultar_estado(partida)["capitulos"][0]["imagen"] is None
-
-
 def test_el_desenlace_tambien_lleva_imagen_con_la_partida_finalizada(partida):
     historia_completa(partida)
     assert ep.consultar_estado(partida)["finalizada"] is True
     assert adjuntar(partida) == 5
 
 
-def test_archivo_de_imagen_devuelve_none_si_falta(partida):
+def test_url_de_imagen_es_none_sin_imagen(partida):
     escribir_capitulo(partida)
-    assert ep.archivo_de_imagen(ep.consultar_estado(partida)["capitulos"][0]) is None
-    adjuntar(partida)
-    capitulo = ep.consultar_estado(partida)["capitulos"][0]
-    ep.archivo_de_imagen(capitulo).unlink()
-    assert ep.archivo_de_imagen(capitulo) is None
+    assert ep.url_de_imagen(ep.consultar_estado(partida)["capitulos"][0]) is None
 
 
 def test_capitulo_de_una_partida_vieja_sin_campo_imagen(partida):
@@ -115,7 +120,7 @@ def test_guardar_capitulo_recuerda_pedir_la_imagen(partida):
 
 
 @pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
-def test_pdf_con_imagenes_y_credito(partida, tmp_path, monkeypatch):
+def test_pdf_con_imagenes_y_credito(partida, unsplash, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for numero in range(1, 5):
         escribir_capitulo(partida)
@@ -126,19 +131,45 @@ def test_pdf_con_imagenes_y_credito(partida, tmp_path, monkeypatch):
     contenido = (tmp_path / generar_pdf.generar_pdf(partida)).read_bytes()
     assert contenido.count(b"/Subtype /Image") == 5
     assert b"unsplash.com" in contenido and b"utm_source=agente_historias_interactivas" in contenido
+    # Se pidió cada foto a su URL original y no quedó ninguna copia en disco
+    assert len([u for u in unsplash.urls() if u.startswith("https://images.")]) == 5
+    assert not (ep.CARPETA_PARTIDAS / "imagenes").exists()
+    assert list(tmp_path.rglob("*.jpg")) == []
 
 
 @pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
-def test_pdf_con_capitulos_sin_imagen_o_con_archivo_perdido(partida, tmp_path, monkeypatch):
+def test_pdf_con_capitulos_sin_imagen(partida, unsplash, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    escribir_capitulo(partida)
-    adjuntar(partida)  # capítulo 1: se pierde el archivo después
-    ep.archivo_de_imagen(ep.consultar_estado(partida)["capitulos"][0]).unlink()
-    ep.registrar_decision(partida, 1)
-    for _ in range(3):  # capítulos 2 a 4: nunca tuvieron imagen
+    for _ in range(4):
         escribir_capitulo(partida)
         ep.registrar_decision(partida, 1)
     escribir_capitulo(partida)
+    contenido = (tmp_path / generar_pdf.generar_pdf(partida)).read_bytes()
+    assert contenido.startswith(b"%PDF") and b"/Subtype /Image" not in contenido
+    assert unsplash.llamadas == []
+
+
+@pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
+@pytest.mark.parametrize(
+    "falla",
+    [
+        {"estado_imagen": 404},
+        {"contenido": b"no soy una imagen"},
+        {"error_red": __import__("requests").ConnectionError()},
+    ],
+    ids=["404", "no_es_jpeg", "sin_red"],
+)
+def test_si_la_foto_no_se_puede_descargar_el_pdf_sale_sin_ella(partida, tmp_path, monkeypatch, falla):
+    """Sin red al exportar, el PDF se genera igual: el capítulo sale sin imagen."""
+    monkeypatch.chdir(tmp_path)
+    escribir_capitulo(partida)
+    adjuntar(partida)
+    ep.registrar_decision(partida, 1)
+    for _ in range(3):
+        escribir_capitulo(partida)
+        ep.registrar_decision(partida, 1)
+    escribir_capitulo(partida)
+    instalar_unsplash(monkeypatch, UnsplashFalso(**falla))
     contenido = (tmp_path / generar_pdf.generar_pdf(partida)).read_bytes()
     assert contenido.startswith(b"%PDF") and b"/Subtype /Image" not in contenido
 
@@ -174,7 +205,10 @@ def test_flujo_guardar_capitulo_y_buscar_imagen(partida, unsplash):
     assert "Ana Fotógrafa" in resultado
     capitulo = ep.consultar_estado(partida)["capitulos"][0]
     assert capitulo["imagen"]["id_foto"] == "foto1"
-    assert ep.archivo_de_imagen(capitulo).read_bytes().startswith(b"\xff\xd8\xff")
+    assert ep.url_de_imagen(capitulo) == "https://images.unsplash.com/foto1.jpg"
+    # Hotlinking: la tool no pidió la foto ni guardó archivos
+    assert [u for u in unsplash.urls() if u.startswith("https://images.")] == []
+    assert not (ep.CARPETA_PARTIDAS / "imagenes").exists()
 
 
 def test_si_unsplash_falla_la_historia_sigue_sin_imagen(partida, monkeypatch):
@@ -245,7 +279,7 @@ def test_el_segundo_capitulo_no_repite_foto(partida, unsplash):
 
 
 @pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
-def test_titulo_imagen_y_credito_van_juntos_en_el_pdf(partida, tmp_path, monkeypatch):
+def test_titulo_imagen_y_credito_van_juntos_en_el_pdf(partida, unsplash, tmp_path, monkeypatch):
     """Regresión: un título no puede quedar solo al pie de una página con su imagen en la siguiente."""
     from reportlab.platypus import Image, KeepTogether, Paragraph
 

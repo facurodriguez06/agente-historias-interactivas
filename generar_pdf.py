@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 from html import escape
 
@@ -7,22 +8,27 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-from estado_partida import archivo_de_imagen, consultar_estado
-from imagenes import URL_UNSPLASH, con_utm
+from estado_partida import consultar_estado, url_de_imagen
+from imagenes import URL_UNSPLASH, ErrorImagen, con_utm, descargar_para_pdf
 
 ANCHO_IMAGEN = 400
 ALTO_MAX_IMAGEN = 260
 
 
 def _imagen_del_capitulo(capitulo, estilo_credito):
-    """Imagen escalada del capítulo con su crédito, o [] si no tiene (o falta el archivo)."""
-    ruta = archivo_de_imagen(capitulo)
-    if ruta is None:
+    """Imagen escalada del capítulo con su crédito, o [] si no tiene o no se puede descargar.
+
+    En la interfaz las fotos se muestran por hotlinking, pero un PDF necesita llevarlas
+    adentro: acá se piden a su URL original y se incrustan desde memoria (sin guardarlas).
+    """
+    url = url_de_imagen(capitulo)
+    if url is None:
         return []
     try:
-        ancho, alto = ImageReader(str(ruta)).getSize()
-    except Exception:
-        return []  # archivo ilegible: el capítulo sale sin imagen
+        datos = descargar_para_pdf(url)
+        ancho, alto = ImageReader(io.BytesIO(datos)).getSize()
+    except (ErrorImagen, OSError, ValueError):
+        return []  # sin red o foto ilegible: el capítulo sale sin imagen
     escala = min(ANCHO_IMAGEN / ancho, ALTO_MAX_IMAGEN / alto)
     imagen = capitulo["imagen"]
     credito = (
@@ -33,7 +39,7 @@ def _imagen_del_capitulo(capitulo, estilo_credito):
     )
     return [
         Spacer(1, 6),
-        Image(str(ruta), width=ancho * escala, height=alto * escala),
+        Image(io.BytesIO(datos), width=ancho * escala, height=alto * escala),
         Paragraph(credito, estilo_credito),
         Spacer(1, 10),
     ]

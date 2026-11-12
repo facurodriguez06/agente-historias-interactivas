@@ -2,7 +2,7 @@
 import streamlit as st
 from langchain_core.messages import AIMessage, ToolMessage
 from agente import crear_agente
-from estado_partida import archivo_de_imagen, consultar_estado, crear_partida
+from estado_partida import consultar_estado, crear_partida, url_de_imagen
 from herramientas import ContextoPartida
 from imagenes import URL_UNSPLASH, con_utm
 
@@ -13,7 +13,7 @@ st.caption("Prototipo Unidad 5 · RAG + create_agent + checkpointer")
 # Un solo identificador por partida: es el id del JSON y también el thread_id del checkpointer.
 if "id_partida" not in st.session_state:
     st.session_state.id_partida = crear_partida()
-# Cada entrada: (rol, texto, imagenes) con imagenes = [(ruta, pie de foto)].
+# Cada entrada: (rol, texto, imagenes) con imagenes = [(url, pie de foto)].
 if "historial_visible" not in st.session_state:
     st.session_state.historial_visible = []
 # Capítulos cuya imagen ya se mostró en el chat (para no repetirla)
@@ -60,15 +60,15 @@ mostrar_estado()
 
 
 def imagenes_nuevas():
-    """Imágenes de capítulos que todavía no se mostraron: [(ruta, pie de foto)]."""
+    """Imágenes de capítulos que todavía no se mostraron: [(url, pie de foto)]. Se cargan por hotlinking."""
     try:
         estado = consultar_estado(st.session_state.id_partida)
     except (ValueError, OSError):
         return []
     nuevas = []
     for capitulo in estado["capitulos"]:
-        ruta = archivo_de_imagen(capitulo)
-        if ruta is None or capitulo["numero"] in st.session_state.imagenes_mostradas:
+        url = url_de_imagen(capitulo)
+        if url is None or capitulo["numero"] in st.session_state.imagenes_mostradas:
             continue
         st.session_state.imagenes_mostradas.add(capitulo["numero"])
         imagen = capitulo["imagen"]
@@ -76,15 +76,15 @@ def imagenes_nuevas():
             f"Foto: [{imagen['autor']}]({con_utm(imagen['url_autor'])}) / "
             f"[Unsplash]({con_utm(URL_UNSPLASH)})"
         )
-        nuevas.append((str(ruta), pie))
+        nuevas.append((url, pie))
     return nuevas
 
 
 for rol, contenido, imagenes in st.session_state.historial_visible:
     with st.chat_message(rol):
         st.markdown(contenido)
-        for ruta, pie in imagenes:
-            st.image(ruta, caption=pie)
+        for url, pie in imagenes:
+            st.image(url, caption=pie)
 
 pregunta = st.chat_input("Ej.: Empezá una historia de misterio en la mansión")
 if pregunta:
@@ -119,7 +119,7 @@ if pregunta:
                 status.update(label="Error en el agente", state="error")
         st.markdown(respuesta or "El agente no produjo una respuesta de texto.")
         imagenes = imagenes_nuevas()
-        for ruta, pie in imagenes:
-            st.image(ruta, caption=pie)
+        for url, pie in imagenes:
+            st.image(url, caption=pie)
     st.session_state.historial_visible.append(("assistant", respuesta, imagenes))
     mostrar_estado()

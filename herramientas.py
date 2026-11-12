@@ -115,15 +115,14 @@ def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
 
 @tool
 def buscar_imagen_capitulo(consulta: str, runtime: ToolRuntime[ContextoPartida]) -> dict:
-    """Busca en Unsplash una foto de ambiente para el capítulo que acabás de guardar y la adjunta (queda en la partida y en el PDF). Llamala una vez por capítulo, justo después de guardar_capitulo.
+    """Busca en Unsplash una foto de ambiente para el capítulo que acabás de guardar y la adjunta (se muestra en la interfaz y en el PDF). Llamala una vez por capítulo, justo después de guardar_capitulo.
     - consulta: 3 a 5 palabras EN INGLÉS sobre el lugar o clima de la escena, por ejemplo "foggy old mansion library" o "rainy greenhouse glass". No uses nombres de personas.
     Si devuelve error, reintentá UNA vez con una consulta más genérica (por ejemplo "foggy mansion"); si vuelve a fallar, seguí sin imagen."""
     try:
         id_partida = runtime.context.id_partida
         # Se valida antes de llamar a la API para no gastar consultas si no corresponde.
         numero, ya_usadas = estado_partida.capitulo_para_imagen(id_partida)
-        destino = estado_partida.ruta_imagen_capitulo(id_partida, numero)
-        foto = imagenes.obtener_imagen(consulta, destino, excluir_ids=ya_usadas)
+        foto = imagenes.obtener_imagen(consulta, excluir_ids=ya_usadas)
         estado_partida.adjuntar_imagen(id_partida, foto)
         return {
             "ok": True,
