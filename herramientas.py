@@ -65,15 +65,22 @@ from estado_partida import guardar_capitulo as guardar_capitulo_json
 
 @tool
 def guardar_capitulo(
-    id_partida: str,
-    titulo: str,
-    texto: str,
-    opciones: list[str]
+    id_partida: str, titulo: str, texto: str, opciones: list[str]
 ) -> dict:
     """Guarda un capítulo de la historia con su título, narración y tres opciones."""
     try:
-        return guardar_capitulo_json(
-            id_partida, titulo, texto, opciones
-        )
+        return guardar_capitulo_json(id_partida, titulo, texto, opciones)
     except ValueError as e:
         return {"error": str(e)}
+
+
+from generar_pdf import generar_pdf
+
+
+@tool
+def generar_pdf_historia(id_partida: str) -> str:
+    """Genera un PDF con los capítulos y decisiones de una partida."""
+    try:
+        return generar_pdf(id_partida)
+    except ValueError as e:
+        return f"Error al generar PDF: {e}"

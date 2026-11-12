@@ -1,4 +1,5 @@
 """Agente mínimo con LangChain create_agent, RAG y memoria corta por partida."""
+
 import os
 
 from dotenv import load_dotenv
@@ -6,7 +7,13 @@ from langchain.agents import create_agent
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 
-from herramientas import buscar_contexto_narrativo
+from herramientas import (
+    buscar_contexto_narrativo,
+    consultar_estado_partida,
+    registrar_decision,
+    guardar_capitulo,
+    generar_pdf_historia,
+)
 
 load_dotenv()
 
@@ -36,7 +43,13 @@ def crear_agente():
     )
     return create_agent(
         model=modelo,
-        tools=[buscar_contexto_narrativo],
+        tools=[
+            buscar_contexto_narrativo,
+            consultar_estado_partida,
+            registrar_decision,
+            guardar_capitulo,
+            generar_pdf_historia,
+        ],
         system_prompt=INSTRUCCIONES,
         checkpointer=InMemorySaver(),
     )

@@ -6,3 +6,4 @@ chroma_db/
 .streamlit/secrets.toml
 historias_generadas/
 partidas/
+historias_generadas/
