@@ -1,76 +1,283 @@
-# Agente de historias interactivas — prototipo inicial
+# Agente de Historias Interactivas
 
-## Objetivo
-Agente de misterio donde **el usuario es el protagonista**, el LLM narra en segunda persona y consulta un universo propio a través de RAG. Implementado con `create_agent` (sin Deep Agents) y memoria mediante checkpointer.
+Trabajo Integrador — Modelos de Lenguaje | UTN FRM | Unidad 5
 
-## Requisitos
-- Python 3.11 o 3.12 (recomendados para simplificar compatibilidades)
-- Acceso a internet en la primera ejecución para descargar el modelo de embeddings
-- API Key de DeepSeek con crédito disponible
+## 1. Descripción del proyecto
 
-## Instalar
+Agente de inteligencia artificial desarrollado con **LangChain**, que genera historias interactivas de misterio donde el usuario es el protagonista.
+
+El agente narra en segunda persona y permite tomar decisiones que modifican el desarrollo de la aventura.
+
+El proyecto combina:
+
+- **LLM:** DeepSeek V4.1 Flash, para generar las narraciones.
+- **RAG:** proporciona conocimiento propio sobre el universo narrativo.
+- **Tools:** permiten consultar información, registrar decisiones, guardar capítulos y generar archivos.
+- **Memoria:** checkpointer de LangChain para conservar el contexto conversacional.
+- **Streamlit:** interfaz web para interactuar con el agente.
+- **ReportLab:** biblioteca para exportar las historias a PDF.
+
+**Objetivo final:** generar una historia de cinco capítulos, con tres alternativas por capítulo, y permitir descargarla como PDF.
+
+## 2. Estructura del proyecto
+
+```text
+agente-historias-interactivas/
+├── corpus/
+│   ├── ambientacion.md
+│   ├── lugares.md
+│   └── pistas_y_objetos.md
+├── agente.py
+├── app.py
+├── herramientas.py
+├── estado_partida.py
+├── ingestar.py
+├── generar_pdf.py
+├── tests/
+├── pytest.ini
+├── requirements.txt
+├── requirements-dev.txt
+├── .env.example
+├── README.md
+└── .gitignore
+```
+
+**Función de cada archivo:**
+
+- `agente.py`: configura el modelo DeepSeek, las herramientas disponibles, el prompt y el checkpointer.
+- `app.py`: implementa la interfaz web mediante Streamlit.
+- `herramientas.py`: contiene las cinco tools disponibles para el agente y `ContextoPartida`, que lleva el id de la partida a las tools.
+- `estado_partida.py`: administra los estados de partida mediante archivos JSON y hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre).
+- `ingestar.py`: procesa los documentos y construye la base vectorial RAG.
+- `generar_pdf.py`: crea el PDF a partir de los capítulos y decisiones guardados.
+- `corpus/`: contiene los documentos que definen el universo narrativo.
+- `tests/`: pruebas automáticas que no usan LLM ni red.
+
+## 3. Sistema RAG
+
+El agente utiliza RAG (*Retrieval-Augmented Generation*) para consultar información sobre el mundo de la historia.
+
+El corpus inicial contiene tres documentos:
+
+1. `ambientacion.md`: premisa, características del universo y reglas narrativas.
+2. `lugares.md`: escenarios y ubicaciones disponibles.
+3. `pistas_y_objetos.md`: elementos y pistas relevantes para la aventura.
+
+**Funcionamiento:**
+
+1. Se leen los documentos Markdown.
+2. Se dividen en fragmentos (*chunks*).
+3. Se generan embeddings mediante un modelo multilingüe de Hugging Face.
+4. Los vectores se almacenan en ChromaDB.
+5. El agente puede invocar la herramienta `buscar_contexto_narrativo` para recuperar los fragmentos más relevantes.
+
+**Estado:** implementado y probado.
+
+La ingesta inicial procesó 3 documentos y generó 8 fragmentos. La recuperación semántica se comprobó correctamente mediante una consulta de prueba.
+
+## 4. Herramientas implementadas
+
+Se implementaron cinco tools de LangChain.
+
+| Tool | Función |
+|---|---|
+| `buscar_contexto_narrativo` | Recupera información del corpus utilizando RAG. |
+| `consultar_estado_partida` | Devuelve capítulos, decisiones, inventario, pistas y el siguiente paso de la partida en curso. |
+| `registrar_decision` | Valida y guarda la opción elegida (1, 2 o 3) y actualiza inventario y pistas (`objetos_recogidos`, `objetos_usados`, `pistas_descubiertas`). |
+| `guardar_capitulo` | Almacena el título, texto y opciones de un capítulo: tres opciones en los capítulos 1 a 4; el capítulo 5 es el desenlace y no lleva opciones. |
+| `generar_pdf_historia` | Genera el PDF de la historia. Solo funciona cuando la historia terminó. |
+
+Las herramientas utilizan el decorador `@tool` de LangChain.
+
+**El id de la partida no es un argumento de las tools.** La aplicación lo fija en el contexto de cada ejecución (`ContextoPartida`, mediante `context_schema` y `ToolRuntime`) y las tools lo leen de ahí. El LLM no lo ve ni lo elige. Las tools de escritura devuelven `siguiente_paso`, que le indica al agente qué corresponde hacer, y los errores de validación vuelven como `{"error": ...}` sin cortar el flujo.
+
+**Estado:** las cinco herramientas están probadas por separado y también en un flujo de punta a punta con un modelo falso (ver sección de tests). Falta comprobar el uso coordinado con un LLM real.
+
+## 5. Estado y memoria
+
+Se utilizan dos mecanismos diferentes:
+
+**Estado estructurado (JSON)**
+
+Cada partida tiene un identificador único (uuid) y almacena:
+
+- Capítulo actual (cantidad de decisiones tomadas).
+- Capítulos generados.
+- Decisiones tomadas, con los objetos y pistas que implicó cada una.
+- Inventario.
+- Pistas descubiertas.
+- Si la partida está finalizada.
+
+Las reglas se hacen cumplir en código (`estado_partida.py`) y no solo en el prompt:
+
+- La historia tiene 5 capítulos. Los capítulos 1 a 4 llevan tres opciones; el capítulo 5 es el desenlace, no lleva opciones y deja la partida finalizada. Después no se puede escribir nada más.
+- No se puede decidir sin un capítulo pendiente ni escribir un capítulo con otro pendiente.
+- Los objetos solo pueden ser los del catálogo (`CATALOGO_OBJETOS`, alineado con `corpus/pistas_y_objetos.md`), solo se pueden usar si están en el inventario y no se pueden recoger dos veces.
+- El id de la partida se valida (uuid hexadecimal) y el JSON se escribe de forma atómica.
+
+La app crea la partida al abrir la sesión y usa su id también como `thread_id` del checkpointer. El panel lateral muestra capítulos, inventario y pistas.
+
+Todavía falta implementar consecuencias narrativas más complejas, por ejemplo puertas que exijan una llave concreta.
+
+**Memoria conversacional**
+
+El agente está configurado con `InMemorySaver`, un checkpointer de LangChain.
+
+Permite conservar el historial por `thread_id` mientras la memoria del proceso siga disponible. El estado JSON, en cambio, sobrevive a un reinicio.
+
+Su funcionamiento con el modelo real todavía está pendiente de pruebas.
+
+## 6. Generación de PDF
+
+Se implementó la generación de documentos mediante ReportLab.
+
+Los archivos incluyen:
+
+- Título de la historia.
+- Capítulos guardados.
+- Narración de cada capítulo.
+- Decisiones tomadas por el usuario.
+
+El PDF solo se genera cuando la historia terminó (capítulo 5 guardado).
+
+**Estado:** generación probada con una historia completa de cinco capítulos (test automático).
+
+Pendiente: incorporar la descarga desde Streamlit. La fuente está tomada de una ruta del sistema (`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`), por lo que hoy solo funciona en Linux.
+
+## 7. Instalación
+
+### Requisitos
+
+- Python 3.11 o 3.12.
+- Git.
+- Acceso a internet para descargar el modelo de embeddings.
+- API Key de DeepSeek con crédito disponible para ejecutar el agente.
+
+### Clonar el repositorio
 
 ```bash
-python -m venv .venv
-# Windows (PowerShell): .venv\Scripts\Activate.ps1
-# macOS/Linux: source .venv/bin/activate
+git clone https://github.com/facurodriguez06/agente-historias-interactivas.git
+cd agente-historias-interactivas
+```
+
+### Crear entorno virtual (Linux / Pop!_OS)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### Instalar dependencias
+
+```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Copiar `.env.example` a `.env` y completar `DEEPSEEK_API_KEY=...`.
-Nunca subir `.env` a GitHub.
+### Configurar DeepSeek
 
-## Correr
+Crear un archivo `.env` en la raíz del proyecto:
+
+```env
+DEEPSEEK_API_KEY=tu_clave
+```
+
+**Importante:** nunca subir `.env` ni claves reales a GitHub.
+
+La API de DeepSeek todavía no fue configurada ni probada en este proyecto.
+
+## 8. Ejecución
+
+### Paso 1. Crear la base vectorial
 
 ```bash
 python ingestar.py
+```
+
+Este comando lee el corpus, genera los embeddings y almacena los vectores en ChromaDB.
+
+No necesita la API de DeepSeek.
+
+### Paso 2. Ejecutar Streamlit
+
+```bash
 streamlit run app.py
 ```
 
-1. Escribir: `Empezá una historia de misterio en la mansión`.
-2. Ver el log de `buscar_contexto_narrativo` y la escena generada.
-3. Elegir una de las tres opciones en el chat, por ejemplo `Elijo la opción 2`.
-4. Preguntar qué pasó antes para probar memoria. La partida usa un `thread_id` único.
+La interfaz requiere configurar previamente la API de DeepSeek.
 
-## Cómo funciona una partida
-- Al abrir la app se crea una partida (`partidas/<id>.json`). Ese id es también el `thread_id` del checkpointer.
-- El id **no** lo elige el LLM: la app lo pasa como contexto del agente (`ContextoPartida`) y las tools lo leen de ahí.
-- La historia tiene 5 capítulos. Del 1 al 4 terminan con 3 opciones; el 5 es el desenlace, sin opciones, y deja la partida como `finalizada`.
-- Inventario y pistas se actualizan con `registrar_decision`. Los objetos solo pueden ser los del catálogo (`CATALOGO_OBJETOS` en `estado_partida.py`, alineado con `corpus/pistas_y_objetos.md`) y solo se pueden usar si están en el inventario.
-- El PDF solo se genera cuando la partida está finalizada.
-- Las reglas viven en código (`estado_partida.py`), no solo en el prompt: el LLM recibe un error si las rompe y un campo `siguiente_paso` que le indica qué hacer.
+Al abrir la app se crea una partida nueva. Con el botón "Nueva partida" se crea otra.
 
-## Tests
-No usan LLM ni red (incluido un flujo de punta a punta con un modelo falso):
+**Advertencia:** el flujo completo todavía no se probó con un LLM real. La aplicación no está validada como experiencia completa de juego.
+
+### Tests
+
+Las pruebas no usan LLM ni red. Incluyen un flujo de punta a punta con un modelo falso que emite llamadas a tools.
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
 
-## Qué está implementado
-- Tres documentos Markdown de corpus propio
-- Ingesta, separación en fragmentos y embeddings multilingües locales
-- Chroma como vector store persistente en disco (carpeta ignorada por Git)
-- Tool RAG con nombres de documentos fuente
-- Estado de partida en JSON con validación de capítulos, decisiones, inventario y pistas
-- Cierre garantizado en el capítulo 5 y exportación a PDF al finalizar
-- `create_agent` con DeepSeek y `InMemorySaver`
-- Streamlit con chat, tools en streaming y panel de estado (capítulos, inventario, pistas)
+## 9. Estado actual del desarrollo
 
-## Qué falta para la entrega final
-- Probar el flujo completo con un LLM real y confirmar el nombre del modelo (`deepseek-flash` no está verificado)
-- Opciones como botones, descarga del PDF y razonamiento en la UI
-- Una tool con servicio externo (web/API; por ejemplo imágenes)
-- Manejo de errores 429 / reintentos con espera
-- `.env.example`, fuente del PDF independiente del sistema operativo y prueba de instalación desde cero
-- Persistencia de la conversación entre reinicios (hoy el JSON sobrevive pero `InMemorySaver` no)
-- Ampliar el corpus y evitar que el RAG devuelva pistas todavía inaccesibles
-- Presentación, diagrama y justificación de componentes
+### Implementado y probado
 
-## Notas
-- DeepSeek genera texto; los embeddings del RAG se hacen **localmente** y no consumen tokens de DeepSeek.
-- La primera descarga del modelo de embeddings puede llevar varios minutos.
-- La app imprime un resumen de resultados de tools. No muestra razonamiento privado no suministrado por el proveedor.
-- `InMemorySaver` mantiene el historial mientras el proceso de la app continúa funcionando; el estado de la partida (JSON) es independiente.
+- [x] Creación del repositorio GitHub.
+- [x] Corpus narrativo de tres documentos.
+- [x] Ingesta, chunking y embeddings.
+- [x] Base vectorial ChromaDB.
+- [x] Recuperación semántica mediante RAG.
+- [x] Creación y consulta de partidas JSON.
+- [x] Registro de decisiones.
+- [x] Guardado de capítulos.
+- [x] Generación de PDF.
+- [x] Pruebas individuales de las cinco tools.
+- [x] Estado JSON integrado con la sesión de Streamlit (el id de partida es también el `thread_id`).
+- [x] Id de partida fijado por la aplicación, no por el LLM.
+- [x] Finalización garantizada en el capítulo 5 (desenlace sin opciones).
+- [x] Inventario y pistas con validación (catálogo de objetos).
+- [x] PDF solo al finalizar la historia.
+- [x] Tests automáticos sin LLM, incluido un flujo con modelo falso.
+
+### Implementado, pendiente de pruebas con un LLM real
+
+- [ ] Ejecución de `create_agent` con DeepSeek.
+- [ ] Uso coordinado de las cinco herramientas siguiendo el prompt.
+- [ ] Memoria conversacional mediante checkpointer.
+- [ ] Streaming de herramientas en Streamlit.
+- [ ] Que el modelo respete el catálogo de objetos.
+
+### Pendiente de desarrollar
+
+- [ ] Confirmar el nombre del modelo de DeepSeek (`deepseek-flash` no está verificado).
+- [ ] Tool con servicio externo (por ejemplo, imágenes).
+- [ ] Opciones como botones y descarga del PDF en la interfaz.
+- [ ] Mostrar el razonamiento del modelo, si el proveedor lo expone.
+- [ ] Manejar errores 429 y reintentos con espera.
+- [ ] Reglas de consecuencias más complejas (por ejemplo, puertas que exigen una llave).
+- [ ] Ampliar el corpus y evitar que el RAG devuelva pistas todavía inaccesibles.
+- [ ] Persistir la conversación entre reinicios.
+- [ ] Fuente del PDF independiente del sistema operativo.
+- [ ] Probar la instalación desde cero.
+- [ ] Completar documentación y presentación final.
+
+## 10. Consideraciones técnicas
+
+- El protagonista siempre es el usuario; no se le asigna identidad ficticia.
+- El RAG almacena conocimiento del universo, no las decisiones de cada partida.
+- El JSON conserva los acontecimientos específicos de cada historia.
+- Los embeddings se generan localmente y no consumen tokens de DeepSeek.
+- Las herramientas se implementaron de forma modular para permitir pruebas independientes.
+- El modelo no puede modificar el estado de una partida sin pasar por las validaciones de `estado_partida.py`, y no elige el id de la partida.
+- La generación de imágenes queda fuera del alcance inicial.
+
+## 11. Próximos pasos
+
+La prioridad es conectar el modelo de lenguaje y conseguir que el agente utilice las herramientas durante una historia real.
+
+Después se agregará una tool con servicio externo, se completará la interfaz (opciones, descarga del PDF), el manejo de errores del proveedor y, finalmente, las pruebas completas, la documentación y la preparación de la exposición.
+
+---
+
+**Estado general:** prototipo técnico en desarrollo. El flujo de la partida (estado, cierre en cinco capítulos, inventario, PDF) está implementado y probado con tests automáticos y un modelo falso. Todavía no existe una demo integral validada con un LLM real.
