@@ -12,8 +12,9 @@ from estado_partida import consultar_estado
 def generar_pdf(id_partida):
     estado = consultar_estado(id_partida)
 
-    if not estado["capitulos"]:
-        raise ValueError("La partida no tiene capitulos")
+    # El libro solo tiene sentido con la historia completa (capítulo 5 = desenlace)
+    if not estado["finalizada"]:
+        raise ValueError("La historia todavia no termino: solo se exporta al llegar al desenlace")
 
     carpeta = Path("historias_generadas")
     carpeta.mkdir(exist_ok=True)
