@@ -1,4 +1,7 @@
+import io
+
 import pytest
+from PIL import Image
 
 import estado_partida
 
@@ -23,3 +26,90 @@ def historia_completa(id_partida):
         escribir_capitulo(id_partida)
         estado_partida.registrar_decision(id_partida, 1)
     escribir_capitulo(id_partida)
+
+
+# --- Unsplash simulado (los tests nunca usan la red ni una key real) ----------
+
+
+def jpeg_bytes(ancho=60, alto=40):
+    """Un JPEG válido y chico, generado en memoria."""
+    salida = io.BytesIO()
+    Image.new("RGB", (ancho, alto), (120, 140, 160)).save(salida, format="JPEG")
+    return salida.getvalue()
+
+
+class RespuestaFalsa:
+    def __init__(self, estado=200, datos=None, contenido=b""):
+        self.status_code = estado
+        self._datos = datos
+        self._contenido = contenido
+
+    def json(self):
+        if self._datos is None:
+            raise ValueError("sin JSON")
+        return self._datos
+
+    def iter_content(self, chunk_size=1024):
+        for i in range(0, len(self._contenido), chunk_size):
+            yield self._contenido[i : i + chunk_size]
+
+
+def foto_falsa(id_foto, autor="Ana Fotógrafa"):
+    return {
+        "id": id_foto,
+        "alt_description": f"foto {id_foto}",
+        "urls": {"regular": f"https://images.unsplash.com/{id_foto}.jpg"},
+        "links": {
+            "html": f"https://unsplash.com/photos/{id_foto}",
+            "download_location": f"https://api.unsplash.com/photos/{id_foto}/download",
+        },
+        "user": {"name": autor, "links": {"html": "https://unsplash.com/@ana"}},
+    }
+
+
+class UnsplashFalso:
+    """Reemplaza requests.get: responde la búsqueda, la descarga y el aviso de descarga."""
+
+    def __init__(self, fotos=None, estado_busqueda=200, estado_imagen=200,
+                 contenido=None, error_red=None, estado_aviso=200):
+        self.fotos = [foto_falsa("foto1"), foto_falsa("foto2")] if fotos is None else fotos
+        self.estado_busqueda = estado_busqueda
+        self.estado_imagen = estado_imagen
+        self.contenido = jpeg_bytes() if contenido is None else contenido
+        self.error_red = error_red
+        self.estado_aviso = estado_aviso
+        self.llamadas = []
+
+    def get(self, url, headers=None, params=None, timeout=None, stream=False):
+        self.llamadas.append({"url": url, "headers": headers, "params": params, "timeout": timeout})
+        if self.error_red is not None:
+            raise self.error_red
+        if url.endswith("/search/photos"):
+            return RespuestaFalsa(self.estado_busqueda, {"results": self.fotos})
+        if url.startswith("https://images.unsplash.com/"):
+            return RespuestaFalsa(self.estado_imagen, contenido=self.contenido)
+        if url.endswith("/download"):
+            return RespuestaFalsa(self.estado_aviso, {"url": "x"})
+        raise AssertionError(f"URL inesperada: {url}")
+
+    def urls(self):
+        return [c["url"] for c in self.llamadas]
+
+
+@pytest.fixture
+def unsplash(monkeypatch):
+    """Instala un Unsplash falso con key de prueba. Se puede reconfigurar desde el test."""
+    import imagenes
+
+    monkeypatch.setenv("UNSPLASH_ACCESS_KEY", "clave-de-prueba")
+    falso = UnsplashFalso()
+    monkeypatch.setattr(imagenes.requests, "get", falso.get)
+    return falso
+
+
+def instalar_unsplash(monkeypatch, falso):
+    import imagenes
+
+    monkeypatch.setenv("UNSPLASH_ACCESS_KEY", "clave-de-prueba")
+    monkeypatch.setattr(imagenes.requests, "get", falso.get)
+    return falso
