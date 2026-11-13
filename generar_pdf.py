@@ -11,6 +11,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from estado_partida import consultar_estado, url_de_imagen
 from imagenes import URL_UNSPLASH, ErrorImagen, con_utm, descargar_para_pdf
 
+# Fuente incluida en el repo (permite tildes y ñ en cualquier sistema operativo)
+RUTA_FUENTE = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
 ANCHO_IMAGEN = 400
 ALTO_MAX_IMAGEN = 260
 
@@ -57,9 +59,7 @@ def generar_pdf(id_partida):
 
     ruta = carpeta / f"{id_partida}.pdf"
 
-    # Fuente que permite escribir tildes y ñ
-    fuente = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    pdfmetrics.registerFont(TTFont("DejaVu", fuente))
+    pdfmetrics.registerFont(TTFont("DejaVu", str(RUTA_FUENTE)))
 
     estilos = getSampleStyleSheet()
 

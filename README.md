@@ -152,7 +152,7 @@ El PDF solo se genera cuando la historia terminó (capítulo 5 guardado). Cada c
 
 **Estado:** generación probada con una historia completa de cinco capítulos (test automático).
 
-Pendiente: incorporar la descarga desde Streamlit. La fuente está tomada de una ruta del sistema (`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`), por lo que hoy solo funciona en Linux.
+Pendiente: incorporar la descarga desde Streamlit. La fuente (DejaVu Sans) viene incluida en `fonts/` junto con su licencia, así que funciona en cualquier sistema operativo.
 
 ## 7. Instalación
 
