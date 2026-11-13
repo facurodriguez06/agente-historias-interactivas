@@ -6,6 +6,7 @@ from estado_partida import consultar_estado, crear_partida, url_de_imagen
 from herramientas import ContextoPartida
 from imagenes import URL_UNSPLASH, con_utm
 from pasos_agente import capitulo_de_respaldo, pasos_de_mensaje
+from proveedores import proveedor_y_modelo
 
 st.set_page_config(page_title="Historias interactivas", page_icon="📖", layout="centered")
 st.title("📖 Historias interactivas")
@@ -36,6 +37,8 @@ with st.sidebar:
         st.session_state.historial_visible = []
         st.session_state.imagenes_mostradas = set()
         st.rerun()
+    proveedor, modelo = proveedor_y_modelo()  # si fuera inválido, crear_agente ya habría frenado la app
+    st.caption(f"**Modelo:** {proveedor} · `{modelo}`")
     st.info("La memoria de la conversación dura mientras está abierta la sesión de Streamlit; "
             "el estado de la partida se guarda en partidas/.")
     panel_estado = st.empty()
