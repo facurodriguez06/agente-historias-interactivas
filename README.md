@@ -190,11 +190,13 @@ El proveedor se elige en el `.env`, sin tocar código (ver `.env.example`):
 
 ```env
 LLM_PROVIDER=nvidia            # nvidia | deepseek (sin definir: deepseek)
-LLM_MODEL=nvidia/nemotron-3-super-120b-a12b
+LLM_MODEL=nvidia/nemotron-3-ultra-550b-a55b
 NVIDIA_API_KEY=tu_clave        # o DEEPSEEK_API_KEY si usás deepseek
 ```
 
-`LLM_MODEL` es opcional: si queda vacío se usa el default del proveedor (`nvidia/nemotron-3-super-120b-a12b` o `deepseek-flash`). La clave de NVIDIA se obtiene en [build.nvidia.com](https://build.nvidia.com). Agregar otro proveedor es sumar una función y una entrada en `PROVEEDORES` dentro de `proveedores.py`.
+`LLM_MODEL` es opcional: si queda vacío se usa el default del proveedor (`nvidia/nemotron-3-ultra-550b-a55b` o `deepseek-flash`). La clave de NVIDIA se obtiene en [build.nvidia.com](https://build.nvidia.com). Agregar otro proveedor es sumar una función y una entrada en `PROVEEDORES` dentro de `proveedores.py`.
+
+Ojo: varios modelos del catálogo de NVIDIA responden `410 Gone` (fueron dados de baja en el endpoint hosteado aunque sigan apareciendo en la lista). `nvidia/nemotron-3-ultra-550b-a55b` es el que pasó la prueba de tool calling + razonamiento con `scripts/probar_modelo.py`; por eso es el default.
 
 Para probar el modelo antes de abrir la app:
 

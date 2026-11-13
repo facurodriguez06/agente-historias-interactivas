@@ -33,7 +33,7 @@ def _crear_nvidia(modelo):
     # ChatNVIDIA lee NVIDIA_API_KEY del entorno. No tiene max_retries, y
     # max_tokens está deprecado: el equivalente es max_completion_tokens.
     return ChatNVIDIA(
-        model=modelo or "nvidia/nemotron-3-super-120b-a12b",
+        model=modelo or "nvidia/nemotron-3-ultra-550b-a55b",
         temperature=TEMPERATURA,
         max_completion_tokens=MAX_TOKENS,
     )
