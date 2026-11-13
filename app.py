@@ -5,7 +5,7 @@ from agente import crear_agente
 from estado_partida import consultar_estado, crear_partida, url_de_imagen
 from herramientas import ContextoPartida
 from imagenes import URL_UNSPLASH, con_utm
-from pasos_agente import pasos_de_mensaje
+from pasos_agente import capitulo_de_respaldo, pasos_de_mensaje
 
 st.set_page_config(page_title="Historias interactivas", page_icon="📖", layout="centered")
 st.title("📖 Historias interactivas")
@@ -59,6 +59,22 @@ def mostrar_estado():
 
 
 mostrar_estado()
+
+
+def cantidad_de_capitulos():
+    try:
+        return len(consultar_estado(st.session_state.id_partida)["capitulos"])
+    except (ValueError, OSError):
+        return 0
+
+
+def respuesta_de_respaldo(capitulos_antes):
+    """Si el modelo no dio texto final pero guardó un capítulo, se muestra desde el JSON."""
+    try:
+        estado = consultar_estado(st.session_state.id_partida)
+    except (ValueError, OSError):
+        return ""
+    return capitulo_de_respaldo(capitulos_antes, estado) or ""
 
 
 def imagenes_nuevas():
@@ -115,6 +131,7 @@ if pregunta:
     with st.chat_message("assistant"):
         respuesta = ""
         pasos = []
+        capitulos_antes = cantidad_de_capitulos()
         # Contenedor y no st.status: st.status es un expander y no admite el del razonamiento adentro.
         with st.container(border=True), st.spinner("El agente está trabajando..."):
             try:
@@ -133,6 +150,8 @@ if pregunta:
                                 respuesta = mensaje.text
             except Exception as exc:
                 respuesta = f"Ocurrió un error: `{type(exc).__name__}: {exc}`"
+        if not respuesta:
+            respuesta = respuesta_de_respaldo(capitulos_antes)
         st.markdown(respuesta or "El agente no produjo una respuesta de texto.")
         imagenes = imagenes_nuevas()
         for url, pie in imagenes:

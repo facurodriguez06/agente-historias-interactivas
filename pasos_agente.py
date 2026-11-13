@@ -31,3 +31,17 @@ def pasos_de_mensaje(mensaje):
     elif isinstance(mensaje, ToolMessage):
         pasos.append({"tipo": "resultado", "nombre": mensaje.name, "texto": str(mensaje.content)[:900]})
     return pasos
+
+
+def capitulo_de_respaldo(capitulos_antes, estado):
+    """Último capítulo guardado durante el turno, en el formato de la respuesta; None si no hubo.
+
+    Red de seguridad para cuando el modelo guardó el capítulo pero terminó el turno sin texto.
+    """
+    if len(estado["capitulos"]) <= capitulos_antes:
+        return None
+    capitulo = estado["capitulos"][-1]
+    partes = [f"**Capítulo {capitulo['numero']}: {capitulo['titulo']}**", capitulo["texto"]]
+    if capitulo["opciones"]:
+        partes.append("\n".join(f"{i}. {opcion}" for i, opcion in enumerate(capitulo["opciones"], start=1)))
+    return "\n\n".join(partes)
