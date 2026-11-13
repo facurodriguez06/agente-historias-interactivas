@@ -29,3 +29,9 @@ def test_guarda_el_mensaje_crudo(tmp_path, monkeypatch):
     assert datos["additional_kwargs"]["reasoning_content"] == "function functionfunction..."
     assert datos["response_metadata"]["finish_reason"] == "stop"
     assert datos["tool_calls"] == [] and datos["invalid_tool_calls"][0]["name"] == "guardar_capitulo"
+
+
+def test_dos_volcados_seguidos_no_se_pisan(tmp_path, monkeypatch):
+    monkeypatch.setattr(diagnostico, "CARPETA_LOGS", tmp_path / "logs")
+    rutas = {diagnostico.guardar_mensaje_crudo(AIMessage(content="")) for _ in range(5)}
+    assert len(rutas) == 5 and len(list((tmp_path / "logs").glob("*.json"))) == 5

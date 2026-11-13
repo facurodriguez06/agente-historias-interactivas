@@ -14,6 +14,7 @@ from herramientas import (
     buscar_imagen_capitulo,
     generar_pdf_historia,
 )
+from middleware_reintentos import MiddlewareReintentos
 from proveedores import obtener_modelo
 
 load_dotenv()
@@ -70,6 +71,7 @@ def crear_agente():
             generar_pdf_historia,
         ],
         system_prompt=INSTRUCCIONES,
+        middleware=[MiddlewareReintentos()],
         context_schema=ContextoPartida,
         checkpointer=InMemorySaver(),
     )

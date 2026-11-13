@@ -20,7 +20,13 @@ def es_respuesta_vacia(mensaje):
 def guardar_mensaje_crudo(mensaje):
     """Guarda el AIMessage tal como llegó y devuelve la ruta del JSON."""
     CARPETA_LOGS.mkdir(exist_ok=True)
-    ruta = CARPETA_LOGS / f"{datetime.now():%Y-%m-%d_%H-%M-%S-%f}.json"
+    base = f"{datetime.now():%Y-%m-%d_%H-%M-%S-%f}"
+    ruta = CARPETA_LOGS / f"{base}.json"
+    # En Windows el reloj tiene poca resolución: dos volcados seguidos pueden coincidir.
+    sufijo = 1
+    while ruta.exists():
+        ruta = CARPETA_LOGS / f"{base}_{sufijo}.json"
+        sufijo += 1
     datos = {
         "content": mensaje.content,
         "additional_kwargs": mensaje.additional_kwargs,
