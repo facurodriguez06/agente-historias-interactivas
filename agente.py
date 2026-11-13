@@ -1,10 +1,7 @@
 """Agente mínimo con LangChain create_agent, RAG y memoria corta por partida."""
 
-import os
-
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 
 from estado_partida import CATALOGO_OBJETOS, TOTAL_CAPITULOS
@@ -17,6 +14,8 @@ from herramientas import (
     buscar_imagen_capitulo,
     generar_pdf_historia,
 )
+from middleware_reintentos import MiddlewareReintentos
+from proveedores import obtener_modelo
 
 load_dotenv()
 
@@ -61,16 +60,8 @@ MUNDO, INVENTARIO Y PISTAS
 
 
 def crear_agente():
-    if not os.getenv("DEEPSEEK_API_KEY"):
-        raise RuntimeError("Falta DEEPSEEK_API_KEY en el archivo .env")
-    modelo = ChatDeepSeek(
-        model="deepseek-flash",
-        temperature=0.5,
-        max_tokens=1000,
-        max_retries=2,
-    )
     return create_agent(
-        model=modelo,
+        model=obtener_modelo(),
         tools=[
             buscar_contexto_narrativo,
             consultar_estado_partida,
@@ -80,6 +71,7 @@ def crear_agente():
             generar_pdf_historia,
         ],
         system_prompt=INSTRUCCIONES,
+        middleware=[MiddlewareReintentos()],
         context_schema=ContextoPartida,
         checkpointer=InMemorySaver(),
     )

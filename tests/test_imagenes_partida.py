@@ -1,7 +1,5 @@
 """Imágenes de los capítulos (hotlinking): estado, tool, PDF y flujo con el agente (red simulada)."""
 
-import os
-
 import pytest
 from langchain_core.messages import AIMessage
 
@@ -11,9 +9,6 @@ from test_flujo_agente import ModeloGuionado, correr, crear, llamada, resultados
 
 herramientas = pytest.importorskip("herramientas")
 generar_pdf = pytest.importorskip("generar_pdf")
-
-FUENTE = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-
 
 def foto(id_foto="foto1", autor="Ana Fotógrafa"):
     return {
@@ -119,7 +114,6 @@ def test_guardar_capitulo_recuerda_pedir_la_imagen(partida):
 # --- PDF -------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
 def test_pdf_con_imagenes_y_credito(partida, unsplash, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for numero in range(1, 5):
@@ -137,7 +131,6 @@ def test_pdf_con_imagenes_y_credito(partida, unsplash, tmp_path, monkeypatch):
     assert list(tmp_path.rglob("*.jpg")) == []
 
 
-@pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
 def test_pdf_con_capitulos_sin_imagen(partida, unsplash, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for _ in range(4):
@@ -149,7 +142,6 @@ def test_pdf_con_capitulos_sin_imagen(partida, unsplash, tmp_path, monkeypatch):
     assert unsplash.llamadas == []
 
 
-@pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
 @pytest.mark.parametrize(
     "falla",
     [
@@ -278,7 +270,6 @@ def test_el_segundo_capitulo_no_repite_foto(partida, unsplash):
     assert [c["imagen"]["id_foto"] for c in capitulos] == ["foto1", "foto2"]
 
 
-@pytest.mark.skipif(not os.path.exists(FUENTE), reason="falta la fuente DejaVu del sistema")
 def test_titulo_imagen_y_credito_van_juntos_en_el_pdf(partida, unsplash, tmp_path, monkeypatch):
     """Regresión: un título no puede quedar solo al pie de una página con su imagen en la siguiente."""
     from reportlab.platypus import Image, KeepTogether, Paragraph

@@ -28,12 +28,15 @@ agente-historias-interactivas/
 │   ├── lugares.md
 │   └── pistas_y_objetos.md
 ├── agente.py
+├── proveedores.py
 ├── app.py
 ├── herramientas.py
 ├── estado_partida.py
 ├── ingestar.py
 ├── generar_pdf.py
 ├── imagenes.py
+├── scripts/
+│   └── probar_modelo.py
 ├── tests/
 ├── pytest.ini
 ├── requirements.txt
@@ -45,7 +48,9 @@ agente-historias-interactivas/
 
 **Función de cada archivo:**
 
-- `agente.py`: configura el modelo DeepSeek, las herramientas disponibles, el prompt y el checkpointer.
+- `agente.py`: arma el agente con el modelo de `proveedores.py`, las herramientas disponibles, el prompt y el checkpointer.
+- `proveedores.py`: fábrica de modelos; elige NVIDIA o DeepSeek según `LLM_PROVIDER` del `.env`.
+- `scripts/probar_modelo.py`: prueba manual del modelo configurado (tool calling y razonamiento), fuera de la app.
 - `app.py`: implementa la interfaz web mediante Streamlit.
 - `herramientas.py`: contiene las seis tools disponibles para el agente y `ContextoPartida`, que lleva el id de la partida a las tools.
 - `estado_partida.py`: administra los estados de partida mediante archivos JSON y hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre).
@@ -147,7 +152,7 @@ El PDF solo se genera cuando la historia terminó (capítulo 5 guardado). Cada c
 
 **Estado:** generación probada con una historia completa de cinco capítulos (test automático).
 
-Pendiente: incorporar la descarga desde Streamlit. La fuente está tomada de una ruta del sistema (`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`), por lo que hoy solo funciona en Linux.
+Pendiente: incorporar la descarga desde Streamlit. La fuente (DejaVu Sans) viene incluida en `fonts/` junto con su licencia, así que funciona en cualquier sistema operativo.
 
 ## 7. Instalación
 
@@ -177,6 +182,32 @@ source .venv/bin/activate
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+### Elegir proveedor de LLM
+
+El proveedor se elige en el `.env`, sin tocar código (ver `.env.example`):
+
+```env
+LLM_PROVIDER=nvidia            # nvidia | deepseek (sin definir: deepseek)
+LLM_MODEL=nvidia/nemotron-3-ultra-550b-a55b
+NVIDIA_API_KEY=tu_clave        # o DEEPSEEK_API_KEY si usás deepseek
+```
+
+`LLM_MODEL` es opcional: si queda vacío se usa el default del proveedor (`nvidia/nemotron-3-ultra-550b-a55b` o `deepseek-flash`). La clave de NVIDIA se obtiene en [build.nvidia.com](https://build.nvidia.com). Agregar otro proveedor es sumar una función y una entrada en `PROVEEDORES` dentro de `proveedores.py`.
+
+`LLM_TIMEOUT` (opcional, default 120) es el tiempo máximo en segundos de cada llamada al modelo. Si se agota, o el proveedor responde 429/502/503/504, el middleware de `middleware_reintentos.py` reintenta hasta 3 veces esperando 2, 4 y 8 segundos.
+
+Ojo: varios modelos del catálogo de NVIDIA responden `410 Gone` (fueron dados de baja en el endpoint hosteado aunque sigan apareciendo en la lista). `nvidia/nemotron-3-ultra-550b-a55b` es el que pasó la prueba de tool calling + razonamiento con `scripts/probar_modelo.py`; por eso es el default.
+
+Para probar el modelo antes de abrir la app:
+
+```bash
+python scripts/probar_modelo.py --listar   # modelos de NVIDIA que soportan tools
+python scripts/probar_modelo.py            # pide 21 + 21 usando una tool y muestra tool calls y razonamiento
+python scripts/probar_modelo.py --latencia # repite la prueba 2 veces y mide cada llamada
+python scripts/probar_modelo.py --modelos nvidia/nemotron-3-ultra-550b-a55b,meta/llama-3.3-70b-instruct
+                                           # compara varios modelos en una tabla (pisa LLM_MODEL)
 ```
 
 ### Configurar DeepSeek
