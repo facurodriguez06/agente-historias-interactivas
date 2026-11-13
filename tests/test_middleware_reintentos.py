@@ -3,6 +3,7 @@
 import logging
 
 import pytest
+import requests
 from langchain.agents import create_agent
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -129,3 +130,56 @@ def test_vacio_tres_veces_termina_sin_colgarse(logs_temporales):
     assert len(modelo.recibidos) == 3  # 1 llamada + 2 reintentos, y corta
     assert mensajes[-1].text == ""
     assert len(list(logs_temporales.glob("*.json"))) == 3
+
+
+# --- Timeouts y errores transitorios ---------------------------------------------
+
+
+TIMEOUT_NVIDIA = requests.exceptions.ReadTimeout(
+    "HTTPSConnectionPool(host='integrate.api.nvidia.com', port=443): Read timed out. (read timeout=60)"
+)
+
+
+def test_timeout_y_despues_ok(caplog):
+    with caplog.at_level(logging.WARNING, logger="middleware_reintentos"):
+        mensajes, _, esperas = correr([TIMEOUT_NVIDIA, FINAL])
+    assert mensajes[-1].text == "Da 42."
+    assert esperas == [2]
+    assert "Reintento 1/3 por error transitorio (ReadTimeout)" in caplog.text
+
+
+def test_503_de_nvidia_y_despues_ok():
+    mensajes, _, esperas = correr([Exception("[503] Service Unavailable\nRequestID: x"), FINAL])
+    assert mensajes[-1].text == "Da 42."
+    assert esperas == [2]
+
+
+def test_timeout_siempre_termina_con_error_claro():
+    esperas = []
+    modelo = ModeloFalso(guion=[TIMEOUT_NVIDIA] * 4, recibidos=[])
+    agente = create_agent(model=modelo, tools=[sumar], middleware=[mr.MiddlewareReintentos(dormir=esperas.append)])
+    with pytest.raises(mr.ErrorProveedorNoResponde, match="no respondió a tiempo"):
+        agente.invoke({"messages": [{"role": "user", "content": "hola"}]})
+    assert esperas == [2, 4, 8]
+    assert len(modelo.recibidos) == 4
+
+
+@pytest.mark.parametrize("error", [
+    requests.exceptions.ConnectTimeout("connect timeout"),
+    requests.exceptions.ConnectionError("conexión rechazada"),
+    TimeoutError("Timeout reached without a successful response."),  # ChatNVIDIA tras un 202
+    Exception("[502] Bad Gateway"),
+    Exception("[504] Gateway Timeout"),
+])
+def test_errores_transitorios_reconocidos(error):
+    assert mr.es_error_transitorio(error)
+
+
+@pytest.mark.parametrize("error", [
+    Exception("[401] Unauthorized"),
+    Exception("[404] Not Found"),
+    Exception("[410] Gone"),
+    ValueError("otro"),
+])
+def test_errores_no_transitorios(error):
+    assert not mr.es_error_transitorio(error) and not mr.es_error_de_limite(error)

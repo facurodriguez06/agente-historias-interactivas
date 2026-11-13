@@ -3,6 +3,9 @@
 Problema que resuelve:
 - Límites del proveedor (429): el catálogo gratuito de NVIDIA corta por cuota y
   sin reintento el turno se pierde. Se reintenta con espera exponencial.
+- Errores transitorios: timeouts de lectura o conexión, conexiones caídas y
+  respuestas 502/503/504 (visto: dos ReadTimeout seguidos contra
+  integrate.api.nvidia.com). Misma espera exponencial que el 429.
 - Respuestas vacías o mal formadas: con nemotron-3-ultra vimos un AIMessage sin
   tool_calls y sin texto, con la llamada a la tool escrita dentro del
   razonamiento. create_agent lo toma como respuesta final y el turno termina sin
@@ -16,7 +19,12 @@ middleware prearmado. Solo implementa la versión sync porque la app usa stream(
 """
 
 import logging
+import re
 import time
+
+import httpx
+import openai
+import requests
 
 from langchain.agents.middleware import AgentMiddleware, ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage
@@ -25,7 +33,7 @@ from diagnostico import es_respuesta_vacia, guardar_mensaje_crudo
 
 log = logging.getLogger(__name__)
 
-ESPERAS_LIMITE = (2, 4, 8)  # segundos antes de cada reintento por 429
+ESPERAS = (2, 4, 8)  # segundos antes de cada reintento por 429 o error transitorio
 REINTENTOS_VACIA = 2
 AVISO_FORMATO = (
     "Tu respuesta anterior salió vacía o con la llamada a la herramienta mal formada. "
@@ -33,16 +41,55 @@ AVISO_FORMATO = (
 )
 
 
+# Timeouts y conexiones caídas: requests (ChatNVIDIA), httpx/openai (DeepSeek) y los de Python.
+ERRORES_DE_RED = (
+    requests.exceptions.Timeout,
+    requests.exceptions.ConnectionError,
+    httpx.TimeoutException,
+    httpx.NetworkError,
+    openai.APIConnectionError,  # incluye APITimeoutError
+    TimeoutError,
+    ConnectionError,
+)
+CODIGOS_TRANSITORIOS = {502, 503, 504}
+
+
 class ErrorLimiteProveedor(RuntimeError):
     """El proveedor siguió devolviendo 429 después de todos los reintentos."""
 
 
+class ErrorProveedorNoResponde(RuntimeError):
+    """El proveedor siguió con timeouts o errores 5xx después de todos los reintentos."""
+
+
+def _codigo_http(error):
+    """Código HTTP del error: status_code (openai/DeepSeek) o "[503] ..." en el texto (ChatNVIDIA)."""
+    codigo = getattr(error, "status_code", None)
+    if codigo is None and (coincidencia := re.search(r"\[(\d{3})\]", str(error))):
+        codigo = int(coincidencia.group(1))
+    return codigo
+
+
 def es_error_de_limite(error):
-    """429 en cualquiera de sus formas: status_code (openai/DeepSeek) o "[429] ..." (ChatNVIDIA)."""
-    if getattr(error, "status_code", None) == 429:
+    """429 en cualquiera de sus formas."""
+    if _codigo_http(error) == 429:
         return True
     texto = str(error).lower()
-    return "[429]" in texto or "too many requests" in texto or "rate limit" in texto
+    return "too many requests" in texto or "rate limit" in texto
+
+
+def es_error_transitorio(error):
+    """Timeout, conexión caída o 502/503/504: vale la pena reintentar."""
+    return isinstance(error, ERRORES_DE_RED) or _codigo_http(error) in CODIGOS_TRANSITORIOS
+
+
+def _motivo_error(error):
+    """Motivo para el log si el error se reintenta, o None si hay que propagarlo."""
+    if es_error_de_limite(error):
+        return "límite del proveedor (429)"
+    if es_error_transitorio(error):
+        return f"error transitorio ({type(error).__name__})"
+    return None
 
 
 def _mensaje_ai(respuesta):
@@ -70,20 +117,25 @@ class MiddlewareReintentos(AgentMiddleware):
         self.dormir = dormir  # inyectable para que los tests no esperen de verdad
 
     def _llamar(self, request, handler):
-        """Llama al modelo reintentando solo los errores de límite."""
-        for intento, espera in enumerate((*ESPERAS_LIMITE, None), start=1):
+        """Llama al modelo reintentando los 429 y los errores transitorios."""
+        for intento, espera in enumerate((*ESPERAS, None), start=1):
             try:
                 return handler(request)
             except Exception as error:
-                if not es_error_de_limite(error):
+                motivo = _motivo_error(error)
+                if motivo is None:
                     raise
                 if espera is None:
-                    raise ErrorLimiteProveedor(
-                        f"El proveedor sigue limitando los pedidos (429) después de {len(ESPERAS_LIMITE)} "
-                        "reintentos. Esperá unos minutos o cambiá de modelo en el .env."
+                    if es_error_de_limite(error):
+                        raise ErrorLimiteProveedor(
+                            f"El proveedor sigue limitando los pedidos (429) después de {len(ESPERAS)} "
+                            "reintentos. Esperá unos minutos o cambiá de modelo en el .env."
+                        ) from error
+                    raise ErrorProveedorNoResponde(
+                        "El proveedor no respondió a tiempo; probá de nuevo en un minuto. "
+                        f"(Último error: {type(error).__name__}, después de {len(ESPERAS)} reintentos)"
                     ) from error
-                log.warning("Reintento %d/%d por límite del proveedor (429); espero %ds",
-                            intento, len(ESPERAS_LIMITE), espera)
+                log.warning("Reintento %d/%d por %s; espero %ds", intento, len(ESPERAS), motivo, espera)
                 self.dormir(espera)
 
     def wrap_model_call(self, request, handler):

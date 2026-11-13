@@ -19,11 +19,26 @@ from langchain_core.language_models import BaseChatModel
 TEMPERATURA = 0.5
 MAX_TOKENS = 1000
 MAX_REINTENTOS = 2
+TIMEOUT_POR_DEFECTO = 120  # segundos; ChatNVIDIA trae 60 y con modelos grandes no alcanza
 
 
 def _exigir_clave(variable):
     if not os.getenv(variable):
         raise RuntimeError(f"Falta {variable} en el archivo .env")
+
+
+def _timeout():
+    """Timeout de cada llamada en segundos, desde LLM_TIMEOUT (default 120)."""
+    valor = os.getenv("LLM_TIMEOUT", "").strip()
+    if not valor:
+        return TIMEOUT_POR_DEFECTO
+    try:
+        segundos = float(valor)
+    except ValueError:
+        segundos = 0
+    if segundos <= 0:
+        raise RuntimeError(f"LLM_TIMEOUT={valor!r} no es válido: tiene que ser un número de segundos mayor a 0")
+    return segundos
 
 
 def _crear_nvidia(modelo):
@@ -32,10 +47,12 @@ def _crear_nvidia(modelo):
 
     # ChatNVIDIA lee NVIDIA_API_KEY del entorno. No tiene max_retries, y
     # max_tokens está deprecado: el equivalente es max_completion_tokens.
+    # timeout llega a requests (conexión y lectura de cada pedido).
     return ChatNVIDIA(
         model=modelo,
         temperature=TEMPERATURA,
         max_completion_tokens=MAX_TOKENS,
+        timeout=_timeout(),
     )
 
 
@@ -48,6 +65,7 @@ def _crear_deepseek(modelo):
         temperature=TEMPERATURA,
         max_tokens=MAX_TOKENS,
         max_retries=MAX_REINTENTOS,
+        timeout=_timeout(),
     )
 
 

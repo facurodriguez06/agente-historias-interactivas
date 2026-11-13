@@ -196,6 +196,8 @@ NVIDIA_API_KEY=tu_clave        # o DEEPSEEK_API_KEY si usás deepseek
 
 `LLM_MODEL` es opcional: si queda vacío se usa el default del proveedor (`nvidia/nemotron-3-ultra-550b-a55b` o `deepseek-flash`). La clave de NVIDIA se obtiene en [build.nvidia.com](https://build.nvidia.com). Agregar otro proveedor es sumar una función y una entrada en `PROVEEDORES` dentro de `proveedores.py`.
 
+`LLM_TIMEOUT` (opcional, default 120) es el tiempo máximo en segundos de cada llamada al modelo. Si se agota, o el proveedor responde 429/502/503/504, el middleware de `middleware_reintentos.py` reintenta hasta 3 veces esperando 2, 4 y 8 segundos.
+
 Ojo: varios modelos del catálogo de NVIDIA responden `410 Gone` (fueron dados de baja en el endpoint hosteado aunque sigan apareciendo en la lista). `nvidia/nemotron-3-ultra-550b-a55b` es el que pasó la prueba de tool calling + razonamiento con `scripts/probar_modelo.py`; por eso es el default.
 
 Para probar el modelo antes de abrir la app:

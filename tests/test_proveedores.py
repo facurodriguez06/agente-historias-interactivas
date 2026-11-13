@@ -9,7 +9,7 @@ import proveedores
 def sin_dotenv(monkeypatch):
     """Los tests no leen el .env real del desarrollador."""
     monkeypatch.setattr(proveedores, "load_dotenv", lambda: None)
-    for variable in ("LLM_PROVIDER", "LLM_MODEL", "NVIDIA_API_KEY", "DEEPSEEK_API_KEY"):
+    for variable in ("LLM_PROVIDER", "LLM_MODEL", "LLM_TIMEOUT", "NVIDIA_API_KEY", "DEEPSEEK_API_KEY"):
         monkeypatch.delenv(variable, raising=False)
 
 
@@ -57,3 +57,24 @@ def test_crea_el_modelo_del_proveedor(monkeypatch, proveedor, variable, clase):
     modelo = proveedores.obtener_modelo()
     assert type(modelo).__name__ == clase
     assert modelo.temperature == 0.5 and modelo.max_tokens == 1000
+
+
+@pytest.mark.parametrize("proveedor, variable, atributo", [
+    ("nvidia", "NVIDIA_API_KEY", lambda m: m._client.timeout),
+    ("deepseek", "DEEPSEEK_API_KEY", lambda m: m.request_timeout),
+])
+def test_timeout_por_defecto_y_configurable(monkeypatch, proveedor, variable, atributo):
+    monkeypatch.setenv("LLM_PROVIDER", proveedor)
+    monkeypatch.setenv(variable, "clave-de-prueba")
+    assert atributo(proveedores.obtener_modelo()) == 120
+    monkeypatch.setenv("LLM_TIMEOUT", "45")
+    assert atributo(proveedores.obtener_modelo()) == 45
+
+
+@pytest.mark.parametrize("valor", ["abc", "0", "-5"])
+def test_timeout_invalido(monkeypatch, valor):
+    monkeypatch.setenv("LLM_PROVIDER", "nvidia")
+    monkeypatch.setenv("NVIDIA_API_KEY", "clave-de-prueba")
+    monkeypatch.setenv("LLM_TIMEOUT", valor)
+    with pytest.raises(RuntimeError, match="LLM_TIMEOUT"):
+        proveedores.obtener_modelo()
