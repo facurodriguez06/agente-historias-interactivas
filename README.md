@@ -28,12 +28,15 @@ agente-historias-interactivas/
 │   ├── lugares.md
 │   └── pistas_y_objetos.md
 ├── agente.py
+├── proveedores.py
 ├── app.py
 ├── herramientas.py
 ├── estado_partida.py
 ├── ingestar.py
 ├── generar_pdf.py
 ├── imagenes.py
+├── scripts/
+│   └── probar_modelo.py
 ├── tests/
 ├── pytest.ini
 ├── requirements.txt
@@ -45,7 +48,9 @@ agente-historias-interactivas/
 
 **Función de cada archivo:**
 
-- `agente.py`: configura el modelo DeepSeek, las herramientas disponibles, el prompt y el checkpointer.
+- `agente.py`: arma el agente con el modelo de `proveedores.py`, las herramientas disponibles, el prompt y el checkpointer.
+- `proveedores.py`: fábrica de modelos; elige NVIDIA o DeepSeek según `LLM_PROVIDER` del `.env`.
+- `scripts/probar_modelo.py`: prueba manual del modelo configurado (tool calling y razonamiento), fuera de la app.
 - `app.py`: implementa la interfaz web mediante Streamlit.
 - `herramientas.py`: contiene las seis tools disponibles para el agente y `ContextoPartida`, que lleva el id de la partida a las tools.
 - `estado_partida.py`: administra los estados de partida mediante archivos JSON y hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre).
@@ -177,6 +182,25 @@ source .venv/bin/activate
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+### Elegir proveedor de LLM
+
+El proveedor se elige en el `.env`, sin tocar código (ver `.env.example`):
+
+```env
+LLM_PROVIDER=nvidia            # nvidia | deepseek (sin definir: deepseek)
+LLM_MODEL=nvidia/nemotron-3-super-120b-a12b
+NVIDIA_API_KEY=tu_clave        # o DEEPSEEK_API_KEY si usás deepseek
+```
+
+`LLM_MODEL` es opcional: si queda vacío se usa el default del proveedor (`nvidia/nemotron-3-super-120b-a12b` o `deepseek-flash`). La clave de NVIDIA se obtiene en [build.nvidia.com](https://build.nvidia.com). Agregar otro proveedor es sumar una función y una entrada en `PROVEEDORES` dentro de `proveedores.py`.
+
+Para probar el modelo antes de abrir la app:
+
+```bash
+python scripts/probar_modelo.py --listar   # modelos de NVIDIA que soportan tools
+python scripts/probar_modelo.py            # pide 21 + 21 usando una tool y muestra tool calls y razonamiento
 ```
 
 ### Configurar DeepSeek
