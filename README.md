@@ -205,6 +205,9 @@ Para probar el modelo antes de abrir la app:
 ```bash
 python scripts/probar_modelo.py --listar   # modelos de NVIDIA que soportan tools
 python scripts/probar_modelo.py            # pide 21 + 21 usando una tool y muestra tool calls y razonamiento
+python scripts/probar_modelo.py --latencia # repite la prueba 2 veces y mide cada llamada
+python scripts/probar_modelo.py --modelos nvidia/nemotron-3-ultra-550b-a55b,meta/llama-3.3-70b-instruct
+                                           # compara varios modelos en una tabla (pisa LLM_MODEL)
 ```
 
 ### Configurar DeepSeek

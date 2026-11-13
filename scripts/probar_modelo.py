@@ -2,12 +2,15 @@
 
     python scripts/probar_modelo.py --listar   # modelos de NVIDIA con soporte de tools
     python scripts/probar_modelo.py            # tool calling + razonamiento con obtener_modelo()
+    python scripts/probar_modelo.py --latencia # la prueba de tool calling 2 veces, con tiempos
+    python scripts/probar_modelo.py --modelos m1,m2  # --latencia para cada modelo (pisa LLM_MODEL)
 """
 
 import argparse
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,9 +18,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv
 from langchain_core.tools import tool
 
+from middleware_reintentos import ERRORES_DE_RED
 from proveedores import obtener_modelo
 
 PREGUNTA = "¿cuánto es 21 + 21? usá la tool"
+REPETICIONES_LATENCIA = 2
 
 
 @tool
@@ -39,8 +44,14 @@ def describir_error(error):
         return "403: la key no tiene acceso a este modelo."
     if estado == 404:
         return "404: el modelo no existe para este proveedor. Revisá LLM_MODEL (probá --listar)."
+    if estado == 410:
+        return "410: el modelo fue dado de baja en el endpoint hosteado."
     if estado == 429:
         return "429: límite de pedidos o de cuota alcanzado. Esperá un rato y reintentá."
+    if estado in (502, 503, 504):
+        return f"{estado}: el proveedor no está disponible ahora. Probá en un rato."
+    if isinstance(error, ERRORES_DE_RED):
+        return f"timeout o conexión ({type(error).__name__}): el modelo no respondió a tiempo (ver LLM_TIMEOUT)."
     primera_linea = texto.strip().splitlines()[0] if texto.strip() else type(error).__name__
     return f"{type(error).__name__}: {primera_linea}"
 
@@ -130,12 +141,85 @@ def probar():
     print(f"orígenes con thinking:   {', '.join(origenes_pensando) or 'ninguno'}")
 
 
+def tool_call_correcta(mensaje):
+    return any(
+        llamada["name"] == "sumar" and llamada["args"] == {"a": 21, "b": 21}
+        for llamada in mensaje.tool_calls
+    )
+
+
+def medir_modelo(nombre=None):
+    """Hace la prueba de tool calling REPETICIONES_LATENCIA veces y devuelve una fila para la tabla.
+
+    Captura los errores de cada llamada (404, 410, timeout...) y sigue con la siguiente.
+    """
+    if nombre:
+        os.environ["LLM_MODEL"] = nombre  # load_dotenv no pisa variables ya definidas
+    fila = {"modelo": nombre or os.getenv("LLM_MODEL") or "(default)", "ok": 0, "razonamiento": 0,
+            "tiempos": [], "error": ""}
+    try:
+        modelo = obtener_modelo()
+    except RuntimeError as error:
+        fila["error"] = str(error)
+        print(f"\n### {fila['modelo']}: {fila['error']}")
+        return fila
+    fila["modelo"] = getattr(modelo, "model", None) or getattr(modelo, "model_name", None) or fila["modelo"]
+    print(f"\n### {fila['modelo']}")
+    con_tools = modelo.bind_tools([sumar])
+    for intento in range(1, REPETICIONES_LATENCIA + 1):
+        inicio = time.perf_counter()
+        try:
+            mensaje = con_tools.invoke(PREGUNTA)
+        except Exception as error:
+            fila["error"] = describir_error(error)
+            print(f"  llamada {intento}: ERROR tras {time.perf_counter() - inicio:.1f}s -> {fila['error']}")
+            continue
+        segundos = time.perf_counter() - inicio
+        ok, pensado = tool_call_correcta(mensaje), bool(razonamiento(mensaje))
+        fila["tiempos"].append(segundos)
+        fila["ok"] += ok
+        fila["razonamiento"] += pensado
+        print(f"  llamada {intento}: {segundos:.1f}s | tool call correcta: {'sí' if ok else 'no'}"
+              f" | razonamiento: {'sí' if pensado else 'no'}")
+    return fila
+
+
+def imprimir_tabla(filas):
+    encabezado = ("modelo", "ok tool call", "razonamiento", "segundos promedio", "error")
+    renglones = []
+    for f in filas:
+        promedio = f"{sum(f['tiempos']) / len(f['tiempos']):.1f}" if f["tiempos"] else "-"
+        renglones.append((f["modelo"], f"{f['ok']}/{REPETICIONES_LATENCIA}",
+                          f"{f['razonamiento']}/{REPETICIONES_LATENCIA}", promedio, f["error"][:60]))
+    anchos = [max(len(r[i]) for r in [encabezado, *renglones]) for i in range(len(encabezado))]
+    linea = lambda r: " | ".join(c.ljust(a) for c, a in zip(r, anchos)).rstrip()
+    print("\n" + linea(encabezado))
+    print("-+-".join("-" * a for a in anchos))
+    for r in renglones:
+        print(linea(r))
+
+
+def medir_latencia(modelos):
+    load_dotenv()
+    filas = [medir_modelo(m) for m in modelos] if modelos else [medir_modelo()]
+    imprimir_tabla(filas)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--listar", action="store_true", help="lista los modelos de NVIDIA con soporte de tools")
+    parser.add_argument("--latencia", action="store_true",
+                        help=f"repite la prueba de tool calling {REPETICIONES_LATENCIA} veces y mide cada llamada")
+    parser.add_argument("--modelos", help="modelos separados por coma; mide cada uno (implica --latencia)")
     args = parser.parse_args()
+    modelos = [m.strip() for m in (args.modelos or "").split(",") if m.strip()]
     try:
-        listar_modelos_nvidia() if args.listar else probar()
+        if args.listar:
+            listar_modelos_nvidia()
+        elif args.latencia or modelos:
+            medir_latencia(modelos)
+        else:
+            probar()
     except RuntimeError as error:  # configuración: falta la key, proveedor inválido
         print(f"Error de configuración: {error}")
         return 1
