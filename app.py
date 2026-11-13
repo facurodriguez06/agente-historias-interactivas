@@ -2,6 +2,7 @@
 import streamlit as st
 from langchain_core.messages import AIMessage
 from agente import crear_agente
+from diagnostico import es_respuesta_vacia, guardar_mensaje_crudo
 from estado_partida import consultar_estado, crear_partida, url_de_imagen
 from herramientas import ContextoPartida
 from imagenes import URL_UNSPLASH, con_utm
@@ -131,6 +132,8 @@ if pregunta:
                                 dibujar_paso(paso)
                             if isinstance(mensaje, AIMessage) and mensaje.text and not mensaje.tool_calls:
                                 respuesta = mensaje.text
+                            if isinstance(mensaje, AIMessage) and es_respuesta_vacia(mensaje):
+                                guardar_mensaje_crudo(mensaje)
             except Exception as exc:
                 respuesta = f"Ocurrió un error: `{type(exc).__name__}: {exc}`"
         st.markdown(respuesta or "El agente no produjo una respuesta de texto.")
