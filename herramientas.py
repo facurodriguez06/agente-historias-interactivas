@@ -66,22 +66,18 @@ def buscar_contexto_narrativo(consulta: str) -> str:
 
 
 @tool
-def consultar_estado_partida(
-    runtime: ToolRuntime[ContextoPartida],
-) -> dict:
-    """Retrieve the current game state.
+def consultar_estado_partida(runtime: ToolRuntime[ContextoPartida]) -> dict:
+    """Read the current game state from disk BEFORE deciding or writing a chapter.
 
-    Returns written chapters, decisions, inventory,
-    discovered clues, completion status, and the next step.
+    Returns chapters, choices, decisions, inventory, discovered clues,
+    contexto_narrativo (location, established facts, open/resolved mysteries,
+    last chapter summary), completion status and the next step.
+    Always use this state to preserve continuity, including after a restart.
     Takes no arguments.
     """
     try:
         estado = estado_partida.consultar_estado(runtime.context.id_partida)
-        return {
-            **estado,
-            "siguiente_paso": estado_partida.siguiente_paso(estado),
-        }
-
+        return {**estado, "siguiente_paso": estado_partida.siguiente_paso(estado)}
     except (ValueError, OSError) as e:
         return {"error": str(e)}
 
@@ -96,21 +92,18 @@ def registrar_decision(
 ) -> dict:
     """Record the user's selected option (1, 2, or 3).
 
-    Call buscar_contexto_narrativo BEFORE this tool.
+    Call consultar_estado_partida and buscar_contexto_narrativo BEFORE this tool.
 
     Arguments:
     - opcion: the option actually chosen by the user.
-    - objetos_recogidos: objects explicitly collected through
-      the selected action. Use their exact Spanish catalog names.
-    - objetos_usados: objects used by the selected action.
-      They must already be in the inventory.
-    - pistas_descubiertas: new clues genuinely discovered
-      through the selected action, as short Spanish phrases.
+    - objetos_recogidos: objects explicitly collected through the selected
+      action, using their exact Spanish catalog names.
+    - objetos_usados: objects used by the selected action; they must already
+      be in the inventory.
+    - pistas_descubiertas: genuinely discovered new clues, as short Spanish
+      phrases. Use [] if no new clues were discovered.
 
-    Never invent clues just to fill pistas_descubiertas.
-    Simply entering a room does not automatically reveal a clue.
-    If the user discovers nothing new, use pistas_descubiertas=[].
-
+    Never invent clues merely to fill pistas_descubiertas.
     Respect the retrieved RAG context and existing game state.
     If an error occurs, correct the arguments and retry.
     """
@@ -133,17 +126,27 @@ def guardar_capitulo(
     texto: str,
     opciones: list[str],
     runtime: ToolRuntime[ContextoPartida],
+    ubicacion_actual: str | None = None,
+    hechos_nuevos: list[str] | None = None,
+    misterios_nuevos: list[str] | None = None,
+    misterios_resueltos: list[str] | None = None,
+    resumen_contexto: str | None = None,
 ) -> dict:
-    """Save a chapter before displaying it to the user.
+    """Save a chapter AND its persistent narrative context to disk.
 
-    The title, narrative text, and choices must be written
-    in Argentine Spanish.
+    Chapters 1 through 4 require exactly three choices; chapter 5 requires [].
+    The title, narrative text and choices must be in Argentine Spanish.
+    Provide these additional context fields in English EVERY time:
+    - ubicacion_actual: current canonical location (e.g., "Entrance Hall").
+    - hechos_nuevos: short facts actually established by this chapter; [] if none.
+    - misterios_nuevos: new unresolved story questions; [] if none.
+    - misterios_resueltos: exact pending questions answered here; [] if none.
+    - resumen_contexto: a factual short summary of this chapter for continuity.
 
-    Chapters 1 through 4 require exactly three choices.
-    Chapter 5 is the ending and requires opciones=[].
-
-    The chapter must remain consistent with the retrieved
-    RAG context, the player's decisions, inventory, and clues.
+    Previously established facts are retained. Never record possibilities
+    or events not actually shown in the story as established facts.
+    The extra fields are optional for compatibility with older callers,
+    but the agent must provide them when generating new chapters.
     """
     try:
         return estado_partida.guardar_capitulo(
@@ -151,6 +154,11 @@ def guardar_capitulo(
             titulo,
             texto,
             opciones,
+            ubicacion_actual=ubicacion_actual,
+            hechos_nuevos=hechos_nuevos,
+            misterios_nuevos=misterios_nuevos,
+            misterios_resueltos=misterios_resueltos,
+            resumen_contexto=resumen_contexto,
         )
 
     except (ValueError, OSError) as e:
@@ -158,62 +166,40 @@ def guardar_capitulo(
 
 
 @tool
-def generar_pdf_historia(
-    runtime: ToolRuntime[ContextoPartida],
-) -> str:
-    """Generate a PDF containing the completed story.
+def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
+    """Generate a PDF containing the completed story and decisions.
 
-    Includes the chapters and recorded decisions.
-    This tool can only be used after chapter 5 is saved.
-    Returns the generated file path.
+    Can only be used after chapter 5 is saved. Returns the generated path.
     """
     try:
         return generar_pdf(runtime.context.id_partida)
-
     except (ValueError, OSError) as e:
         return f"Error generating PDF: {e}"
 
 
 @tool
 def buscar_imagen_capitulo(
-    consulta: str,
-    runtime: ToolRuntime[ContextoPartida],
+    consulta: str, runtime: ToolRuntime[ContextoPartida]
 ) -> dict:
     """Find an atmospheric Unsplash image for the latest chapter.
 
-    Call this tool once immediately after guardar_capitulo.
-
-    - consulta: 3 to 5 English words describing the scene
-      or its atmosphere.
-    - Examples: "foggy old mansion library",
-      "rainy greenhouse glass".
+    Call once immediately after guardar_capitulo.
+    - consulta: 3 to 5 English words describing the scene or atmosphere.
+    - Examples: "foggy old mansion library", "rainy greenhouse glass".
     - Do not include people's names.
-
-    If the search fails, retry once using a more general query.
-    If it fails again, continue without an image.
-
-    The image is attached to the chapter and can be displayed
-    in the interface and included in the PDF.
+    Retry once with a more general query if the search fails; then continue
+    without an image. The result is attached to the chapter and its PDF.
     """
     try:
         id_partida = runtime.context.id_partida
-
-        # Validate before calling Unsplash to avoid unnecessary requests.
         numero, ya_usadas = estado_partida.capitulo_para_imagen(id_partida)
-
-        foto = imagenes.obtener_imagen(
-            consulta,
-            excluir_ids=ya_usadas,
-        )
-
+        foto = imagenes.obtener_imagen(consulta, excluir_ids=ya_usadas)
         estado_partida.adjuntar_imagen(id_partida, foto)
-
         return {
             "ok": True,
             "capitulo": numero,
             "autor": foto["autor"],
             "descripcion": foto["descripcion"],
         }
-
     except (ValueError, OSError) as e:
         return {"error": str(e)}

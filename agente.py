@@ -1,8 +1,12 @@
-"""Agente con LangChain create_agent, RAG y memoria por partida."""
+"""Agente de historias con RAG, contexto narrativo y checkpoints en SQLite."""
+
+import sqlite3
+from functools import lru_cache
+from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from estado_partida import CATALOGO_OBJETOS, TOTAL_CAPITULOS
 from herramientas import (
@@ -19,6 +23,21 @@ from proveedores import obtener_modelo
 
 load_dotenv()
 
+RUTA_MEMORIA = Path(__file__).resolve().parent / "partidas" / "memoria_agente.sqlite3"
+
+
+@lru_cache(maxsize=1)
+def obtener_checkpointer():
+    """Conserva una conexión SQLite durante la vida del proceso Streamlit.
+
+    SqliteSaver serializa sus operaciones con un lock interno. check_same_thread=False
+    permite utilizar la conexión desde los hilos de Streamlit.
+    """
+    RUTA_MEMORIA.parent.mkdir(parents=True, exist_ok=True)
+    conexion = sqlite3.connect(str(RUTA_MEMORIA), check_same_thread=False, timeout=30)
+    return SqliteSaver(conexion)
+
+
 INSTRUCCIONES = f"""You are a narrator of interactive mystery stories.
 
 LANGUAGE
@@ -27,6 +46,8 @@ LANGUAGE
 - The protagonist is always the user. Never assign them a name, profession, background, or personality.
 - The narrative must remain in Spanish even though these instructions and the RAG corpus are in English.
 - Use English for queries sent to buscar_contexto_narrativo and buscar_imagen_capitulo.
+- Write persistent narrative context summaries, established facts, locations, and mysteries in English.
+- Use exact Spanish catalog names for inventory objects and short Spanish phrases for discovered player clues.
 
 STORY STRUCTURE
 - The story has exactly {TOTAL_CAPITULOS} chapters.
@@ -38,17 +59,19 @@ STORY STRUCTURE
 MANDATORY WORKFLOW
 
 1. STARTING A STORY
+   - Call consultar_estado_partida to inspect the saved game state.
    - Call buscar_contexto_narrativo to retrieve relevant world information.
    - Write chapter 1 using the retrieved context.
-   - Save it with guardar_capitulo BEFORE showing it to the user.
+   - Save chapter 1 and its persistent narrative context with guardar_capitulo BEFORE showing it.
 
 2. WHEN THE USER CHOOSES AN OPTION
-   - Identify the selected option from the pending chapter.
-   - FIRST call buscar_contexto_narrativo with a relevant query in English.
-   - Use the retrieved context and the selected option to determine what the user actually discovers, collects, or uses.
-   - THEN call registrar_decision with the selected option and only the justified objects and clues.
-   - After the decision has been registered successfully, write the next chapter.
-   - Save that chapter with guardar_capitulo before showing it.
+   - FIRST call consultar_estado_partida. Read the pending chapter's choices and the saved contexto_narrativo.
+   - Identify the actual selected option. Do not invent a different player decision.
+   - Call buscar_contexto_narrativo with a relevant query in English BEFORE registering the decision.
+   - Use the RAG context, the selected choice, and saved player state to identify any justified objects or clues.
+   - Call registrar_decision with only those justified changes. If no new clues were discovered, use pistas_descubiertas=[].
+   - Write the next chapter respecting all saved hechos_establecidos, misterios_pendientes, and ubicacion_actual.
+   - Save the new chapter AND its updated narrative context with guardar_capitulo before showing it.
 
 3. CHAPTER IMAGES
    - After EVERY successful guardar_capitulo, call buscar_imagen_capitulo once.
@@ -65,9 +88,8 @@ MANDATORY WORKFLOW
    - Tell the user in Spanish that the story has ended and provide the generated file path.
 
 5. QUESTIONS ABOUT THE CURRENT GAME
-   - If the user asks about previous decisions, collected objects, or discovered clues, call consultar_estado_partida.
-   - Answer the question without advancing the story.
-   - Do not call registrar_decision or guardar_capitulo for these questions.
+   - If the user asks about previous decisions, collected objects, discovered clues, or established story facts, call consultar_estado_partida.
+   - Answer without advancing the story or calling registrar_decision or guardar_capitulo.
 
 6. UNCLEAR DECISIONS
    - If a chapter is waiting for a decision and the user has not clearly selected an option, ask them to choose 1, 2, or 3.
@@ -81,7 +103,7 @@ MANDATORY WORKFLOW
    - Offer to start a new game instead.
 
 USER-FACING RESPONSE
-- Display "Capítulo N: título", followed by the story text and, except for the ending, three numbered choices.
+- Display "Capítulo N: título", followed by the story text.
 - Each chapter's narrative text must contain no more than 180 words.
 - The text shown to the user must match the chapter saved with guardar_capitulo.
 - All user-facing narrative content must be in Argentine Spanish.
@@ -109,6 +131,20 @@ WORLD CONSISTENCY
 - The mystery must emerge through exploration, not through an externally assigned mission invented by the model.
 - Before saving a chapter, check the narrative for internal contradictions.
 - Make sure descriptions of objects, locations, and events remain logically consistent.
+
+PERSISTENT STORY CONTEXT
+- consultar_estado_partida returns contexto_narrativo, stored on disk independently of the LLM's conversation memory.
+- Read this context before every new chapter and preserve its established facts across chapters and app restarts.
+- When calling guardar_capitulo, ALWAYS provide:
+  * ubicacion_actual: the protagonist's current location, using the canonical English location name.
+  * hechos_nuevos: short English facts ESTABLISHED in this chapter, not speculation or unrevealed secrets; [] if none.
+  * misterios_nuevos: open questions actually introduced to the player; [] if none.
+  * misterios_resueltos: exact previously open questions resolved in this chapter; [] if none.
+  * resumen_contexto: a short English factual summary of this chapter for continuity.
+- Only record facts supported by the world corpus or the actual chapter and player decisions.
+- A planned event, a possible clue, or a speculative explanation is NOT an established fact.
+- Never overwrite previously established facts to conveniently change the plot.
+- Saving context does not replace writing the chapter or recording the player's choice.
 
 INVENTORY
 - Never claim that the user found, collected, or used an object unless their chosen action justifies it.
@@ -147,5 +183,5 @@ def crear_agente():
         system_prompt=INSTRUCCIONES,
         middleware=[MiddlewareReintentos()],
         context_schema=ContextoPartida,
-        checkpointer=InMemorySaver(),
+        checkpointer=obtener_checkpointer(),
     )
