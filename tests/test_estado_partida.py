@@ -1,5 +1,7 @@
 """Pruebas de las reglas de la historia. No usan LLM ni red."""
 
+import os
+
 import pytest
 
 import estado_partida as ep
@@ -213,3 +215,53 @@ def test_pista_vacia_se_rechaza(partida):
     with pytest.raises(ValueError):
         ep.registrar_decision(partida, 1, pistas_descubiertas=["  "])
     assert ep.consultar_estado(partida)["decisiones"] == []
+
+
+# --- partidas abiertas -----------------------------------------------------
+
+
+def test_sin_partidas_abiertas_si_no_hay_carpeta():
+    assert ep.listar_partidas_abiertas() == []
+
+
+def test_partida_recien_creada_es_abierta(partida):
+    abiertas = ep.listar_partidas_abiertas()
+    assert [r["id_partida"] for r in abiertas] == [partida]
+    resumen = abiertas[0]
+    assert resumen["capitulos_escritos"] == 0
+    assert resumen["titulo_ultimo_capitulo"] == ""
+    assert resumen["decision_pendiente"] is False
+
+
+def test_las_finalizadas_no_son_abiertas(partida):
+    historia_completa(partida)
+    abierta = ep.crear_partida()
+    assert [r["id_partida"] for r in ep.listar_partidas_abiertas()] == [abierta]
+
+
+def test_orden_de_mas_reciente_a_mas_antigua():
+    vieja, nueva = ep.crear_partida(), ep.crear_partida()
+    os.utime(ep.CARPETA_PARTIDAS / f"{vieja}.json", (1000, 1000))
+    os.utime(ep.CARPETA_PARTIDAS / f"{nueva}.json", (2000, 2000))
+    assert [r["id_partida"] for r in ep.listar_partidas_abiertas()] == [nueva, vieja]
+
+
+def test_limite_recorta_el_listado():
+    ids = [ep.crear_partida() for _ in range(4)]
+    for i, id_partida in enumerate(ids):
+        os.utime(ep.CARPETA_PARTIDAS / f"{id_partida}.json", (1000 + i, 1000 + i))
+    assert [r["id_partida"] for r in ep.listar_partidas_abiertas(limite=3)] == ids[:0:-1]
+
+
+def test_resumen_con_capitulos_y_decision_pendiente(partida):
+    escribir_capitulo(partida)
+    resumen = ep.listar_partidas_abiertas()[0]
+    assert resumen["capitulos_escritos"] == 1
+    assert resumen["titulo_ultimo_capitulo"] == "Título 1"
+    assert resumen["resumen_ultimo_capitulo"]
+    assert resumen["decision_pendiente"] is True
+
+
+def test_json_corrupto_se_ignora(partida):
+    (ep.CARPETA_PARTIDAS / ("b" * 32 + ".json")).write_text("{no json", encoding="utf-8")
+    assert [r["id_partida"] for r in ep.listar_partidas_abiertas()] == [partida]

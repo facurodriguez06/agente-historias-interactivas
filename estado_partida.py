@@ -162,6 +162,60 @@ def consultar_estado(id_partida):
     return estado
 
 
+# ---------------------------------------------------------------------------
+# Listado de partidas abiertas
+# ---------------------------------------------------------------------------
+
+
+def _resumen_de_partida(estado):
+    """Datos justos para listar una partida en el chat, sin volcar el JSON entero."""
+    capitulos = estado["capitulos"]
+    ultimo = capitulos[-1] if capitulos else None
+    return {
+        "id_partida": estado["id_partida"],
+        "capitulos_escritos": len(capitulos),
+        "capitulo_actual": estado["capitulo_actual"],
+        "finalizada": estado["finalizada"],
+        "titulo_ultimo_capitulo": ultimo["titulo"] if ultimo else "",
+        "resumen_ultimo_capitulo": estado["contexto_narrativo"].get(
+            "resumen_ultimo_capitulo", ""
+        ),
+        # Hay decisión pendiente cuando el último capítulo escrito aún no fue respondido.
+        "decision_pendiente": bool(capitulos)
+        and len(capitulos) == estado["capitulo_actual"] + 1,
+    }
+
+
+def listar_partidas_abiertas(limite=None):
+    """Partidas sin finalizar, de más reciente a más antigua (por mtime del JSON).
+
+    Una partida "abierta" es la que no llegó a un final: finalizada=False.
+    `limite` recorta el listado a las últimas N. Los JSON ilegibles se ignoran:
+    un archivo corrupto no puede romper el listado del chat.
+    """
+    if not CARPETA_PARTIDAS.exists():
+        return []
+
+    rutas = sorted(
+        CARPETA_PARTIDAS.glob("*.json"),
+        key=lambda ruta: ruta.stat().st_mtime,
+        reverse=True,
+    )
+
+    abiertas = []
+    for ruta in rutas:
+        try:
+            estado = consultar_estado(ruta.stem)
+        except (ValueError, OSError, json.JSONDecodeError):
+            continue
+        if not estado["finalizada"]:
+            abiertas.append(_resumen_de_partida(estado))
+            if limite is not None and len(abiertas) >= limite:
+                break
+
+    return abiertas
+
+
 def siguiente_paso(estado):
     """Indica qué corresponde hacer ahora; se devuelve al LLM en cada tool de escritura."""
     if estado["finalizada"]:
