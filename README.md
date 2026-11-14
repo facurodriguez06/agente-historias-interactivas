@@ -286,6 +286,35 @@ Al abrir la app se crea una partida nueva. Con el botón "Nueva partida" se crea
 
 **Advertencia:** el flujo completo todavía no se probó con un LLM real. La aplicación no está validada como experiencia completa de juego.
 
+### Ayuda memoria: levantar y cerrar el servidor local
+
+**Levantarlo:** desde la raíz del repositorio, con el `.env` configurado y las dependencias instaladas:
+
+```bash
+source .venv/bin/activate
+HF_HOME="$PWD/.venv/.cache/huggingface" python -m streamlit run app.py \
+  --server.address 127.0.0.1 \
+  --server.port 8501 \
+  --server.fileWatcherType none
+```
+
+Abrir **http://127.0.0.1:8501** y dejar esa terminal abierta. `python -m streamlit` usa la instalación del entorno virtual. `HF_HOME` reutiliza la caché de embeddings preparada en este entorno local; mantener ese mismo valor para no descargarlos de nuevo.
+
+`--server.fileWatcherType none` desactiva la vigilancia de archivos para evitar mensajes como `Inotify queue overflowed`. El chat sigue funcionando; si modificás código Python, reiniciá el servidor para cargar los cambios.
+
+**Cerrar el servidor:** presionar **Ctrl+C en la terminal donde se está ejecutando**. Cerrar solamente la pestaña del navegador **no** apaga el servidor. Cuando vuelva el prompt de la terminal, opcionalmente ejecutar `deactivate` para salir del entorno virtual; `deactivate` por sí solo no detiene Streamlit.
+
+**Volver a levantarlo:** repetir el bloque anterior. No hace falta reinstalar dependencias ni ejecutar la ingesta cada vez.
+
+Si falta `chroma_db/` o cambió el corpus, preparar el RAG antes de iniciar la app:
+
+```bash
+source .venv/bin/activate
+HF_HOME="$PWD/.venv/.cache/huggingface" python ingestar.py
+```
+
+La ingesta **reconstruye** el índice existente. Al apagar el servidor se conservan los JSON de `partidas/`, los PDF y el RAG, pero se pierde la memoria conversacional en RAM; al volver a abrir la app se crea una partida nueva, no se retoma automáticamente la anterior. Conversar con el agente consume créditos del proveedor.
+
 ### Tests
 
 Las pruebas no usan LLM ni red. Incluyen un flujo de punta a punta con un modelo falso que emite llamadas a tools.
