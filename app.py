@@ -1,30 +1,40 @@
-"""Interfaz Streamlit del prototipo: chat, memoria y logs de tools en vivo."""
+"""Interfaz Streamlit: historias, memoria persistente y herramientas del agente."""
 
 import streamlit as st
 from langchain_core.messages import AIMessage
+
 from agente import crear_agente
-from estado_partida import consultar_estado, crear_partida, url_de_imagen
+from estado_partida import (
+    CARPETA_PARTIDAS,
+    consultar_estado,
+    crear_partida,
+    url_de_imagen,
+)
 from herramientas import ContextoPartida
 from imagenes import URL_UNSPLASH, con_utm
 from pasos_agente import capitulo_de_respaldo, pasos_de_mensaje
 from proveedores import proveedor_y_modelo
 
 st.set_page_config(
-    page_title="Historias interactivas", page_icon="📖", layout="centered"
+    page_title="Historias interactivas",
+    page_icon="📖",
+    layout="centered",
 )
-st.title("Historias interactivas")
-st.caption("Prototipo Unidad 5 · RAG + create_agent + checkpointer")
 
-# Un solo identificador por partida: es el id del JSON y también el thread_id del checkpointer.
+st.title("Historias interactivas")
+st.caption("Prototipo Unidad 5 · RAG + create_agent + SQLite")
+
+
 if "id_partida" not in st.session_state:
     st.session_state.id_partida = crear_partida()
-# Cada entrada: (rol, texto, imagenes, pasos) con imagenes = [(url, pie de foto)] y
-# pasos = razonamiento y tools del turno (ver pasos_agente.py), para redibujarlos en el historial.
+
+# Historial visible: (rol, texto, imagenes, pasos)
 if "historial_visible" not in st.session_state:
     st.session_state.historial_visible = []
-# Capítulos cuya imagen ya se mostró en el chat (para no repetirla)
+
 if "imagenes_mostradas" not in st.session_state:
     st.session_state.imagenes_mostradas = set()
+
 if "agente" not in st.session_state:
     try:
         st.session_state.agente = crear_agente()
@@ -32,42 +42,134 @@ if "agente" not in st.session_state:
         st.error(str(exc))
         st.stop()
 
+
+def imagen_de_capitulo(capitulo):
+    """Devuelve la foto y su atribución, si existe."""
+    imagen = capitulo.get("imagen")
+    if not imagen:
+        return []
+    url = url_de_imagen(capitulo)
+    if not url:
+        return []
+    pie = (
+        f"Foto: [{imagen['autor']}]({con_utm(imagen['url_autor'])}) / "
+        f"[Unsplash]({con_utm(URL_UNSPLASH)})"
+    )
+    return [(url, pie)]
+
+
+def reconstruir_historial(estado):
+    """Redibuja capítulos/decisiones desde el JSON al retomar una partida.
+
+    El checkpoint de SQLite conserva por separado la memoria del LLM.
+    Los pasos técnicos de sesiones anteriores no se reconstruyen en la interfaz.
+    """
+    historial = []
+    mostradas = set()
+    decisiones = {d["capitulo"]: d for d in estado["decisiones"]}
+
+    for capitulo in estado["capitulos"]:
+        texto = f"**Capítulo {capitulo['numero']}: {capitulo['titulo']}**\n\n{capitulo['texto']}"
+        if capitulo["numero"] == 5:
+            texto += "\n\n**Historia terminada.**"
+        fotos = imagen_de_capitulo(capitulo)
+        if fotos:
+            mostradas.add(capitulo["numero"])
+        historial.append(("assistant", texto, fotos, []))
+        decision = decisiones.get(capitulo["numero"])
+        if decision:
+            historial.append(("user", str(decision["opcion"]), [], []))
+
+    return historial, mostradas
+
+
+def partidas_guardadas():
+    """Lista partidas JSON de más reciente a más antigua, excluyendo SQLite."""
+    if not CARPETA_PARTIDAS.exists():
+        return []
+    return [
+        ruta.stem
+        for ruta in sorted(
+            CARPETA_PARTIDAS.glob("*.json"),
+            key=lambda ruta: ruta.stat().st_mtime,
+            reverse=True,
+        )
+    ]
+
+
 with st.sidebar:
     st.write("**Partida actual**")
-    st.code(st.session_state.id_partida[:8])
+    st.code(st.session_state.id_partida)
+
     if st.button("Nueva partida"):
         st.session_state.id_partida = crear_partida()
         st.session_state.historial_visible = []
         st.session_state.imagenes_mostradas = set()
         st.rerun()
-    proveedor, modelo = (
-        proveedor_y_modelo()
-    )  # si fuera inválido, crear_agente ya habría frenado la app
+
+    opciones_guardadas = partidas_guardadas()
+    if opciones_guardadas:
+        elegida = st.selectbox(
+            "Retomar partida guardada",
+            options=opciones_guardadas,
+            format_func=lambda identificador: identificador[:8],
+            index=0,
+        )
+        if st.button("Retomar esta partida"):
+            try:
+                estado_guardado = consultar_estado(elegida)
+                historial, mostradas = reconstruir_historial(estado_guardado)
+                st.session_state.id_partida = elegida
+                st.session_state.historial_visible = historial
+                st.session_state.imagenes_mostradas = mostradas
+                st.rerun()
+            except (ValueError, OSError) as exc:
+                st.error(f"No se pudo retomar la partida: {exc}")
+
+    proveedor, modelo = proveedor_y_modelo()
     st.caption(f"**Modelo:** {proveedor} · `{modelo}`")
     st.info(
-        "La memoria de la conversación dura mientras está abierta la sesión de Streamlit; "
-        "el estado de la partida se guarda en partidas/."
+        "Los capítulos, las decisiones y el contexto narrativo se guardan en JSON. "
+        "La memoria del agente se guarda en SQLite dentro de partidas/."
     )
     panel_estado = st.empty()
 
 
 def mostrar_estado():
-    """Resumen de la partida leído del JSON (se vuelve a dibujar al terminar cada turno)."""
+    """Muestra el estado de la partida desde el JSON."""
     with panel_estado.container():
         try:
             estado = consultar_estado(st.session_state.id_partida)
         except (ValueError, OSError):
             st.warning("No se pudo leer el estado de la partida.")
             return
+
         st.write(f"**Capítulos escritos:** {len(estado['capitulos'])}/5")
         if estado["finalizada"]:
             st.success("Historia terminada")
+
         st.write("**Inventario**")
         st.write("\n".join(f"- {o}" for o in estado["inventario"]) or "_vacío_")
         st.write("**Pistas**")
         st.write(
             "\n".join(f"- {p}" for p in estado["pistas_descubiertas"]) or "_ninguna_"
         )
+
+        contexto = estado.get("contexto_narrativo", {})
+        with st.expander("Contexto narrativo guardado", expanded=False):
+            st.write(
+                f"**Ubicación:** {contexto.get('ubicacion_actual') or 'Sin definir'}"
+            )
+            st.write("**Hechos establecidos**")
+            st.write(
+                "\n".join(f"- {h}" for h in contexto.get("hechos_establecidos", []))
+                or "_ninguno_"
+            )
+            st.write("**Misterios pendientes**")
+            st.write(
+                "\n".join(f"- {m}" for m in contexto.get("misterios_pendientes", []))
+                or "_ninguno_"
+            )
 
 
 mostrar_estado()
@@ -81,7 +183,7 @@ def cantidad_de_capitulos():
 
 
 def respuesta_de_respaldo(capitulos_antes):
-    """Si el modelo no dio texto final pero guardó un capítulo, se muestra desde el JSON."""
+    """Recupera el capítulo si el modelo no devolvió texto."""
     try:
         estado = consultar_estado(st.session_state.id_partida)
     except (ValueError, OSError):
@@ -90,31 +192,28 @@ def respuesta_de_respaldo(capitulos_antes):
 
 
 def imagenes_nuevas():
-    """Imágenes de capítulos que todavía no se mostraron: [(url, pie de foto)]. Se cargan por hotlinking."""
+    """Obtiene imágenes que todavía no fueron mostradas."""
     try:
         estado = consultar_estado(st.session_state.id_partida)
     except (ValueError, OSError):
         return []
+
     nuevas = []
     for capitulo in estado["capitulos"]:
-        url = url_de_imagen(capitulo)
-        if url is None or capitulo["numero"] in st.session_state.imagenes_mostradas:
+        if capitulo["numero"] in st.session_state.imagenes_mostradas:
+            continue
+        fotos = imagen_de_capitulo(capitulo)
+        if not fotos:
             continue
         st.session_state.imagenes_mostradas.add(capitulo["numero"])
-        imagen = capitulo["imagen"]
-        pie = (
-            f"Foto: [{imagen['autor']}]({con_utm(imagen['url_autor'])}) / "
-            f"[Unsplash]({con_utm(URL_UNSPLASH)})"
-        )
-        nuevas.append((url, pie))
+        nuevas.extend(fotos)
     return nuevas
 
 
 def dibujar_paso(paso):
-    """Un paso del turno: razonamiento, llamada a una tool o su resultado."""
+    """Muestra razonamiento, llamada a una tool o resultado."""
     if paso["tipo"] == "razonamiento":
         with st.expander("💭 Razonamiento", expanded=True):
-            # Un salto de línea por renglón y sin sangrías (que markdown tomaría por código).
             st.caption(
                 "  \n".join(linea.strip() for linea in paso["texto"].splitlines())
             )
@@ -126,6 +225,21 @@ def dibujar_paso(paso):
         st.code(paso["texto"])
 
 
+def preparar_respuesta(respuesta, capitulos_antes):
+    """Muestra el texto guardado; nunca duplica las opciones de los botones."""
+    try:
+        estado = consultar_estado(st.session_state.id_partida)
+        if len(estado["capitulos"]) > capitulos_antes:
+            capitulo = estado["capitulos"][-1]
+            if capitulo["opciones"]:
+                titulo = f"**Capítulo {capitulo['numero']}: {capitulo['titulo']}**"
+                return f"{titulo}\n\n{capitulo['texto']}"
+    except (ValueError, OSError):
+        pass
+    return respuesta
+
+
+# Historial de mensajes que se muestra en Streamlit
 for rol, contenido, imagenes, pasos in st.session_state.historial_visible:
     with st.chat_message(rol):
         if pasos:
@@ -136,21 +250,19 @@ for rol, contenido, imagenes, pasos in st.session_state.historial_visible:
         for url, pie in imagenes:
             st.image(url, caption=pie)
 
-# Mostrar botones cuando hay un capítulo esperando una decisión
-opcion_elegida = None
 
+# Botones de decisión del último capítulo pendiente
+opcion_elegida = None
 try:
     estado = consultar_estado(st.session_state.id_partida)
-
-    if (
+    capitulo_pendiente = (
         not estado["finalizada"]
-        and estado["capitulos"]
+        and bool(estado["capitulos"])
         and len(estado["capitulos"]) == estado["capitulo_actual"] + 1
-    ):
-        st.write("**¿Qué querés hacer?**")
-
+    )
+    if capitulo_pendiente:
         capitulo = estado["capitulos"][-1]
-
+        st.write("**¿Qué querés hacer?**")
         for i, opcion in enumerate(capitulo["opciones"], start=1):
             if st.button(
                 f"{i}. {opcion}",
@@ -158,14 +270,13 @@ try:
                 use_container_width=True,
             ):
                 opcion_elegida = str(i)
-
 except (ValueError, OSError):
     pass
 
-# También permitimos escribir mensajes normalmente
-mensaje_escrito = st.chat_input("Escribí tu mensaje...")
 
+mensaje_escrito = st.chat_input("Escribí tu mensaje...")
 pregunta = opcion_elegida or mensaje_escrito
+
 if pregunta:
     st.session_state.historial_visible.append(("user", pregunta, [], []))
     with st.chat_message("user"):
@@ -174,8 +285,9 @@ if pregunta:
     with st.chat_message("assistant"):
         respuesta = ""
         pasos = []
+        imagenes = []
         capitulos_antes = cantidad_de_capitulos()
-        # Contenedor y no st.status: st.status es un expander y no admite el del razonamiento adentro.
+
         with st.container(border=True), st.spinner("El agente está trabajando..."):
             try:
                 for evento in st.session_state.agente.stream(
@@ -197,12 +309,16 @@ if pregunta:
                                 respuesta = mensaje.text
             except Exception as exc:
                 respuesta = f"Ocurrió un error: `{type(exc).__name__}: {exc}`"
+
         if not respuesta:
             respuesta = respuesta_de_respaldo(capitulos_antes)
+        respuesta = preparar_respuesta(respuesta, capitulos_antes)
         st.markdown(respuesta or "El agente no produjo una respuesta de texto.")
+
         imagenes = imagenes_nuevas()
         for url, pie in imagenes:
             st.image(url, caption=pie)
+
     st.session_state.historial_visible.append(("assistant", respuesta, imagenes, pasos))
     mostrar_estado()
     st.rerun()

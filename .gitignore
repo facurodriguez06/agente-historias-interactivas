@@ -8,3 +8,4 @@ historias_generadas/
 partidas/
 logs/
 historias_generadas/
+*.sqlite3
