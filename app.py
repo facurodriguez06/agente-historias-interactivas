@@ -253,29 +253,64 @@ for rol, contenido, imagenes, pasos in st.session_state.historial_visible:
 
 # Botones de decisión del último capítulo pendiente
 opcion_elegida = None
+solicitud_reintento = None
+
 try:
     estado = consultar_estado(st.session_state.id_partida)
+
     capitulo_pendiente = (
         not estado["finalizada"]
         and bool(estado["capitulos"])
         and len(estado["capitulos"]) == estado["capitulo_actual"] + 1
     )
+
     if capitulo_pendiente:
         capitulo = estado["capitulos"][-1]
+
         st.write("**¿Qué querés hacer?**")
+
         for i, opcion in enumerate(capitulo["opciones"], start=1):
             if st.button(
                 f"{i}. {opcion}",
-                key=f"opcion_{st.session_state.id_partida}_{capitulo['numero']}_{i}",
+                key=(
+                    f"opcion_{st.session_state.id_partida}_" f"{capitulo['numero']}_{i}"
+                ),
                 use_container_width=True,
             ):
                 opcion_elegida = str(i)
+
+    elif (
+        not estado["finalizada"]
+        and estado["capitulo_actual"] > 0
+        and len(estado["capitulos"]) == estado["capitulo_actual"]
+    ):
+        st.warning(
+            "La última decisión está guardada, pero falta "
+            "generar el capítulo siguiente."
+        )
+
+        if st.button(
+            "Reintentar capítulo pendiente",
+            key=f"reintentar_{st.session_state.id_partida}",
+            use_container_width=True,
+        ):
+            solicitud_reintento = (
+                "Continuá la historia desde el estado guardado. "
+                "La última decisión YA fue registrada en el JSON. "
+                "NO vuelvas a llamar registrar_decision. "
+                "Primero consultá el estado de la partida. "
+                "Después consultá el contexto narrativo necesario "
+                "y generá el próximo capítulo usando guardar_capitulo. "
+                "No repitas capítulos anteriores. "
+                "Si es el capítulo 5, generá también la imagen y el PDF."
+            )
+
 except (ValueError, OSError):
     pass
 
 
 mensaje_escrito = st.chat_input("Escribí tu mensaje...")
-pregunta = opcion_elegida or mensaje_escrito
+pregunta = opcion_elegida or solicitud_reintento or mensaje_escrito
 
 if pregunta:
     st.session_state.historial_visible.append(("user", pregunta, [], []))

@@ -80,7 +80,9 @@ def es_error_de_limite(error):
 
 def es_error_transitorio(error):
     """Timeout, conexión caída o 502/503/504: vale la pena reintentar."""
-    return isinstance(error, ERRORES_DE_RED) or _codigo_http(error) in CODIGOS_TRANSITORIOS
+    return (
+        isinstance(error, ERRORES_DE_RED) or _codigo_http(error) in CODIGOS_TRANSITORIOS
+    )
 
 
 def _motivo_error(error):
@@ -96,7 +98,9 @@ def _mensaje_ai(respuesta):
     if isinstance(respuesta, AIMessage):
         return respuesta
     if isinstance(respuesta, ModelResponse):
-        return next((m for m in reversed(respuesta.result) if isinstance(m, AIMessage)), None)
+        return next(
+            (m for m in reversed(respuesta.result) if isinstance(m, AIMessage)), None
+        )
     return None
 
 
@@ -135,26 +139,35 @@ class MiddlewareReintentos(AgentMiddleware):
                         "El proveedor no respondió a tiempo; probá de nuevo en un minuto. "
                         f"(Último error: {type(error).__name__}, después de {len(ESPERAS)} reintentos)"
                     ) from error
-                log.warning("Reintento %d/%d por %s; espero %ds", intento, len(ESPERAS), motivo, espera)
+                log.warning(
+                    "Reintento %d/%d por %s; espero %ds",
+                    intento,
+                    len(ESPERAS),
+                    motivo,
+                    espera,
+                )
                 self.dormir(espera)
 
     def wrap_model_call(self, request, handler):
         respuesta = self._llamar(request, handler)
         for intento in range(1, REINTENTOS_VACIA + 1):
+
             mensaje = _mensaje_ai(respuesta)
-            motivo = _motivo_mal_formada(mensaje)
-            if motivo is None:
-                return respuesta
-            guardar_mensaje_crudo(mensaje)
-            log.warning("Reintento %d/%d por %s", intento, REINTENTOS_VACIA, motivo)
-            pedido = request
-            if intento == REINTENTOS_VACIA:
-                # El aviso va solo en este pedido: no queda guardado en el historial.
-                pedido = request.override(messages=[*request.messages, HumanMessage(AVISO_FORMATO)])
-            respuesta = self._llamar(pedido, handler)
-        mensaje = _mensaje_ai(respuesta)
+
         if motivo := _motivo_mal_formada(mensaje):
             guardar_mensaje_crudo(mensaje)
-            log.error("La respuesta sigue con %s después de %d reintentos; se devuelve igual",
-                      motivo, REINTENTOS_VACIA)
+
+            log.error(
+                "La respuesta sigue con %s después de %d reintentos",
+                motivo,
+                REINTENTOS_VACIA,
+            )
+
+            raise RuntimeError(
+                "El modelo devolvió una respuesta inválida "
+                "después de varios intentos. "
+                "El estado guardado de la partida no se borró. "
+                "Si hay un capítulo pendiente, podés reintentarlo."
+            )
+
         return respuesta

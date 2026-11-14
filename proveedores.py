@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from langchain_core.language_models import BaseChatModel
 
 TEMPERATURA = 0.5
-MAX_TOKENS = 1000
+MAX_TOKENS = 2500
 MAX_REINTENTOS = 2
 TIMEOUT_POR_DEFECTO = (
     120  # segundos; ChatNVIDIA trae 60 y con modelos grandes no alcanza
