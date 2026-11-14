@@ -4,7 +4,12 @@ Vive fuera de app.py para poder testearlo sin Streamlit. Cada paso es un dict
 serializable, así se guarda en st.session_state y se redibuja en el historial.
 """
 
+import json
+import re
+
 from langchain_core.messages import AIMessage, ToolMessage
+
+_ID_PARTIDA = re.compile(r"[0-9a-f]{32}")
 
 
 def extraer_razonamiento(mensaje):
@@ -45,3 +50,48 @@ def capitulo_de_respaldo(capitulos_antes, estado):
     if capitulo["opciones"]:
         partes.append("\n".join(f"{i}. {opcion}" for i, opcion in enumerate(capitulo["opciones"], start=1)))
     return "\n\n".join(partes)
+
+
+def cambio_de_sesion(mensajes):
+    """Cambio de partida que el agente propuso en un turno, o None si no propuso ninguno.
+
+    La aplicación es la autoridad del switch: el agente solo lo propone con sus
+    tools (retomar_partida por los args de la llamada, iniciar_nueva_partida
+    por el id del resultado). Si el turno trae varios cambios, gana el último.
+    Nada de esto levanta excepciones: una llamada rara se ignora y el turno
+    termina como un turno común.
+    """
+    cambio = None
+    for mensaje in mensajes:
+        if isinstance(mensaje, AIMessage):
+            for llamada in mensaje.tool_calls:
+                if llamada.get("name") != "retomar_partida":
+                    continue
+                id_partida = (llamada.get("args") or {}).get("id_partida")
+                if _id_valido(id_partida):
+                    cambio = {"accion": "retomar", "id_partida": id_partida}
+        elif isinstance(mensaje, ToolMessage):
+            if mensaje.name != "iniciar_nueva_partida":
+                continue
+            id_partida = _id_del_resultado(mensaje.content)
+            if _id_valido(id_partida):
+                cambio = {"accion": "nueva", "id_partida": id_partida}
+    return cambio
+
+
+def _id_valido(id_partida):
+    """Mismo criterio que estado_partida: uuid hex de 32 caracteres."""
+    return isinstance(id_partida, str) and bool(_ID_PARTIDA.fullmatch(id_partida))
+
+
+def _id_del_resultado(contenido):
+    """id_partida del JSON que devuelve la tool, o None si no se puede leer."""
+    if isinstance(contenido, (bytes, bytearray)):
+        contenido = contenido.decode("utf-8", errors="replace")
+    try:
+        datos = json.loads(contenido) if isinstance(contenido, str) else contenido
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(datos, dict):
+        return None
+    return datos.get("id_partida")

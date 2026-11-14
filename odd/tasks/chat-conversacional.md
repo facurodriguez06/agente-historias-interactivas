@@ -35,25 +35,26 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
 
 - T1 (S3, S4): `estado_partida.listar_partidas_abiertas(limite)` con resumen
   por partida (id, capítulos, título/resumen del último, decisión pendiente).
-  Inline. Commit U1.
+  Inline. Commit U1: 887a5da.
 - T2 (S1, S3): tools `listar_partidas_abiertas` y `consultar_otra_partida`
-  (read-only, ID validado). Inline. Commit U1.
+  (read-only, ID validado). Worker A. Commit U2: 41468ff.
 - T3 (S2, S3): tools de control de sesión `iniciar_nueva_partida` y
   `retomar_partida` (validan y devuelven; la app detecta la llamada y aplica
-  el cambio de partida activa). Inline. Commit U2.
+  el cambio de partida activa). Worker A. Commit U2: 41468ff.
 - T4 (S6): módulo `comandos_chat.py` (parseo de `/nueva`, `/retomar`,
-  `/partidas`, `/ayuda`; formateo del listado; saludo inicial). Inline.
-  Commit U2.
+  `/partidas`, `/ayuda`; formateo del listado; saludo inicial). Worker B.
+  Commit U2: 41468ff.
 - T5 (S1, S2, S5, S7): reglas nuevas en `INSTRUCCIONES` del agente: no
   arrancar historia sin instrucción, meta-consultas con tools, volver a
   ofrecer opciones tras responder, confirmar cambios de sesión sin escribir
-  capítulos en el mismo turno. Inline. Commit U3.
+  capítulos en el mismo turno. Worker A. Commit U2: 41468ff.
 - T6 (S1–S7): `app.py`: hilo de chat propio (`thread_id` del chat, no de la
   partida), partida activa opcional, enrutamiento de comandos, retomar en el
-  mismo chat con reconstrucción del historial, sidebar coherente. Inline.
-  Commit U3.
-- T7 (S1–S7): README y verificación final de la suite completa. Inline.
-  Commit U3.
+  mismo chat con reconstrucción del historial, sidebar coherente. Worker C
+  (mwh0th1m-3-b225). Commit U3: 52e3bb4.
+- T7 (S1–S7): README y verificación final de la suite completa. Inline (el
+  runtime rechazó un tercer worker y ordenó ejecución inline; unidad de
+  docs). Commit U3: 52e3bb4.
 
 ## Log
 
@@ -81,3 +82,14 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   del chat del id_partida; la app es autoridad del switch de partida (el LLM
   propone con tools, la app valida y aplica); continuidad canónica por JSON +
   contexto_narrativo.
+- L5: slice boundary (844 líneas autoradas en U1+U2 más los 2 commits previos
+  de main): T1–T5 commiteados en U1 (887a5da) y U2 (41468ff); T6+T7 forman el
+  slice de cierre U3 en feat/chat-conversacional. El push/PR queda decisión
+  del usuario.
+- L6: cierre del feature. T6 por Worker C: rewiring de app.py (id_chat como
+  thread_id, partida activa opcional, comandos deterministas, retomado
+  determinista y propuesto por el agente vía pasos_agente.cambio_de_sesion,
+  +6 tests). T7 inline: README actualizado (descripción, estructura, tools,
+  memoria, ejecución, estado) y verificación final: pytest 216 passed,
+  py_compile OK de los 6 módulos, imports OK. El flujo con LLM real queda
+  pendiente (los comandos y el retomado determinista no usan LLM).

@@ -8,6 +8,8 @@ Agente de inteligencia artificial desarrollado con **LangChain**, que genera his
 
 El agente narra en segunda persona y permite tomar decisiones que modifican el desarrollo de la aventura.
 
+El chat es una conversación que puede atravesar varias partidas: se pueden hacer preguntas sobre partidas anteriores, empezar una historia nueva con una instrucción explícita y retomar una partida abierta en el mismo chat.
+
 El proyecto combina:
 
 - **LLM:** conmutable entre proveedores desde el `.env` (NVIDIA, DeepSeek u OpenRouter), para generar las narraciones.
@@ -40,6 +42,7 @@ agente-historias-interactivas/
 ├── estado_partida.py
 ├── middleware_reintentos.py
 ├── pasos_agente.py
+├── comandos_chat.py
 ├── diagnostico.py
 ├── ingestar.py
 ├── generar_pdf.py
@@ -59,11 +62,12 @@ Carpetas que se generan al ejecutar (están en `.gitignore` y no se versionan): 
 - `agente.py`: arma el agente con el modelo de `proveedores.py`, las herramientas disponibles, el prompt y el checkpointer.
 - `proveedores.py`: fábrica de modelos; elige NVIDIA, DeepSeek u OpenRouter según `LLM_PROVIDER` del `.env` y resuelve `LLM_MODEL` y `LLM_TIMEOUT`.
 - `scripts/probar_modelo.py`: prueba manual del modelo configurado (tool calling y razonamiento), fuera de la app; incluye medición de latencia y comparación entre modelos.
-- `app.py`: implementa la interfaz web mediante Streamlit: chat, streaming del turno, razonamiento del modelo, imágenes y panel de estado.
-- `herramientas.py`: contiene las seis tools disponibles para el agente y `ContextoPartida`, que lleva el id de la partida a las tools.
-- `estado_partida.py`: administra los estados de partida mediante archivos JSON y hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre).
+- `app.py`: implementa la interfaz web mediante Streamlit: chat, enrutamiento de los comandos deterministas, streaming del turno, razonamiento del modelo, imágenes y panel de estado. Es la autoridad del cambio de partida activa: las tools del agente proponen, la app valida y aplica.
+- `herramientas.py`: contiene las diez tools disponibles para el agente (juego, meta-consulta y control de sesión) y `ContextoPartida`, que lleva el id de la partida activa a las tools (vacío cuando no hay partida).
+- `estado_partida.py`: administra los estados de partida mediante archivos JSON, hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre) y lista las partidas abiertas (las que no llegaron a un final).
+- `comandos_chat.py`: comandos deterministas del chat (`/nueva`, `/retomar`, `/partidas`, `/ayuda`), formateo del listado de partidas abiertas, elección numérica, ayuda y saludo. Vive fuera de `app.py` para poder testearse sin Streamlit.
 - `middleware_reintentos.py`: middleware propio (API base de LangChain, `wrap_model_call`) que reintenta 429, timeouts y 502/503/504 con espera exponencial, y repite la llamada cuando el modelo devuelve una respuesta vacía o con la tool call mal formada.
-- `pasos_agente.py`: traduce los mensajes del agente a pasos para la interfaz (razonamiento, llamada a tool, resultado) y arma el capítulo de respaldo cuando el turno termina sin texto; vive fuera de `app.py` para poder testearse sin Streamlit.
+- `pasos_agente.py`: traduce los mensajes del agente a pasos para la interfaz (razonamiento, llamada a tool, resultado), arma el capítulo de respaldo cuando el turno termina sin texto y detecta los cambios de sesión que propone el agente (`iniciar_nueva_partida` / `retomar_partida`) para que la app los aplique; vive fuera de `app.py` para poder testearse sin Streamlit.
 - `diagnostico.py`: detecta las respuestas vacías del modelo y guarda el mensaje crudo en `logs/` para inspeccionarlo.
 - `ingestar.py`: procesa los documentos y construye la base vectorial RAG.
 - `generar_pdf.py`: crea el PDF a partir de los capítulos, decisiones e imágenes guardados.
@@ -96,7 +100,7 @@ La ingesta inicial procesó 3 documentos y generó 8 fragmentos (con `chunk_size
 
 ## 4. Herramientas implementadas
 
-Se implementaron seis tools de LangChain.
+Se implementaron diez tools de LangChain.
 
 | Tool | Función |
 |---|---|
@@ -106,10 +110,14 @@ Se implementaron seis tools de LangChain.
 | `guardar_capitulo` | Almacena el título, texto y opciones de un capítulo: tres opciones en los capítulos 1 a 4; el capítulo 5 es el desenlace y no lleva opciones. |
 | `buscar_imagen_capitulo` | **Servicio externo (API de Unsplash).** Busca una foto de ambiente para el capítulo recién guardado, y guarda su URL original en el capítulo, con el crédito del fotógrafo. La foto se muestra por hotlinking, sin guardar copias. |
 | `generar_pdf_historia` | Genera el PDF ilustrado de la historia. Solo funciona cuando la historia terminó. |
+| `listar_partidas_abiertas` | Lista las últimas partidas abiertas (las que no llegaron a un final), con un resumen de cada una, para retomarlas o consultarlas. |
+| `consultar_otra_partida` | Lee el estado de otra partida (abierta o terminada) para responder preguntas sobre partidas anteriores. Es de solo lectura. |
+| `iniciar_nueva_partida` | Crea una partida nueva y devuelve su id. La aplicación la activa al terminar el turno; en ese turno el agente solo confirma. |
+| `retomar_partida` | Propone retomar una partida abierta por id. Valida que exista y no esté terminada; la aplicación la activa al terminar el turno. |
 
 Las herramientas utilizan el decorador `@tool` de LangChain.
 
-**El id de la partida no es un argumento de las tools.** La aplicación lo fija en el contexto de cada ejecución (`ContextoPartida`, mediante `context_schema` y `ToolRuntime`) y las tools lo leen de ahí. El LLM no lo ve ni lo elige. Las tools de escritura devuelven `siguiente_paso`, que le indica al agente qué corresponde hacer, y los errores de validación vuelven como `{"error": ...}` sin cortar el flujo (las de estado); `buscar_contexto_narrativo` y `generar_pdf_historia` informan el fallo como texto (`"ERROR: ..."` y `"Error al generar PDF: ..."`), también sin cortar el flujo.
+**El id de la partida no es un argumento de las tools.** La aplicación lo fija en el contexto de cada ejecución (`ContextoPartida`, mediante `context_schema` y `ToolRuntime`) y las tools lo leen de ahí. El LLM no lo ve ni lo elige; puede haber sesiones sin partida activa (id vacío), en las que las tools del juego responden con un error claro. Cuando el agente quiere cambiar de partida, lo propone con `iniciar_nueva_partida` o `retomar_partida`, y la aplicación valida y aplica el cambio al terminar el turno. Las tools de escritura devuelven `siguiente_paso`, que le indica al agente qué corresponde hacer, y los errores de validación vuelven como `{"error": ...}` sin cortar el flujo (las de estado); `buscar_contexto_narrativo` y `generar_pdf_historia` informan el fallo como texto (`"ERROR: ..."` y `"Error al generar PDF: ..."`), también sin cortar el flujo.
 
 **Imágenes (`buscar_imagen_capitulo`).** El agente la llama una vez por capítulo, justo después de `guardar_capitulo`, con una consulta corta en inglés sobre el lugar de la escena (por ejemplo, "foggy old mansion library"). Cada capítulo admite una sola imagen, siempre la del último capítulo guardado, y no se repite una foto dentro de la misma historia. Si Unsplash falla (sin key, sin red, límite de consultas, sin resultados), la tool devuelve un error y la historia sigue sin imagen. **Hotlinking:** la partida guarda solo la URL original de la foto (`images.unsplash.com`, sin modificar) y la interfaz la carga directamente desde Unsplash, como piden sus pautas; la app no guarda copias de las fotos. Se avisa al endpoint de descarga de Unsplash al elegir cada foto. La imagen se muestra en el chat con su crédito y se incluye en el PDF, que es el entregable final.
 
@@ -137,15 +145,15 @@ Las reglas se hacen cumplir en código (`estado_partida.py`) y no solo en el pro
 - Los objetos solo pueden ser los del catálogo (`CATALOGO_OBJETOS`, alineado con `corpus/pistas_y_objetos.md`), solo se pueden usar si están en el inventario y no se pueden recoger dos veces.
 - El id de la partida se valida (uuid hexadecimal) y el JSON se escribe de forma atómica.
 
-La app crea la partida al abrir la sesión y usa su id también como `thread_id` del checkpointer. El panel lateral muestra capítulos, inventario y pistas.
+La app no crea ninguna partida al abrir la sesión: la partida activa aparece solo cuando el usuario la pide (`/nueva`, lenguaje natural o retomando una abierta) y viaja en el contexto de cada ejecución. El chat, en cambio, tiene su propio `thread_id`, independiente de la partida: una misma conversación puede atravesar varias partidas. El panel lateral muestra capítulos, inventario y pistas de la partida activa (o "Sin partida activa").
 
 Todavía falta implementar consecuencias narrativas más complejas, por ejemplo puertas que exijan una llave concreta.
 
 **Memoria conversacional**
 
-El agente está configurado con `InMemorySaver`, un checkpointer de LangChain.
+El agente está configurado con un checkpointer de LangChain sobre SQLite (`partidas/memoria_agente.sqlite3`), con una conexión por proceso.
 
-Permite conservar el historial por `thread_id` mientras la memoria del proceso siga disponible. El estado JSON, en cambio, sobrevive a un reinicio.
+Cada chat tiene su propio `thread_id`, distinto del id de la partida. La memoria de la conversación sobrevive a reinicios del servidor, aunque cada sesión de navegador abre un chat nuevo. Al retomar una partida, la continuidad narrativa no depende de la conversación vieja: viene del estado JSON (capítulos, decisiones, inventario, pistas y `contexto_narrativo`), que la app reconstruye en el chat.
 
 Su funcionamiento con el modelo real todavía está pendiente de pruebas.
 
@@ -282,7 +290,14 @@ streamlit run app.py
 
 La interfaz requiere configurar previamente la API Key del proveedor elegido (`NVIDIA_API_KEY`, `DEEPSEEK_API_KEY` u `OPENROUTER_API_KEY`).
 
-Al abrir la app se crea una partida nueva. Con el botón "Nueva partida" se crea otra.
+Al abrir la app no hay ninguna partida activa: el chat saluda y queda a la espera. Una historia arranca únicamente con una instrucción explícita, nunca porque se escriba cualquier cosa.
+
+**El chat**
+
+- **`/nueva`**: crea una partida nueva, la activa y escribe el capítulo 1 en ese mismo turno.
+- **`/retomar`** y **`/partidas`**: listan las últimas 3 partidas abiertas ("abierta" = una partida que no llegó a su desenlace), con su id corto, capítulos y último capítulo. Respondiendo con el número se retoma esa partida en el mismo chat, reconstruyendo la historia desde su JSON; también se puede pedir en lenguaje natural.
+- **`/ayuda`**: muestra los comandos y qué puede hacer el chat.
+- Preguntas sobre partidas anteriores (abiertas o terminadas): el asistente responde sin avanzar ni cerrar la partida activa y, si un capítulo estaba esperando decisión, te lo recuerda al final para seguir jugando.
 
 **Advertencia:** el flujo completo todavía no se probó con un LLM real. La aplicación no está validada como experiencia completa de juego.
 
@@ -313,7 +328,7 @@ source .venv/bin/activate
 HF_HOME="$PWD/.venv/.cache/huggingface" python ingestar.py
 ```
 
-La ingesta **reconstruye** el índice existente. Al apagar el servidor se conservan los JSON de `partidas/`, los PDF y el RAG, pero se pierde la memoria conversacional en RAM; al volver a abrir la app se crea una partida nueva, no se retoma automáticamente la anterior. Conversar con el agente consume créditos del proveedor.
+La ingesta **reconstruye** el índice existente. Al apagar el servidor se conservan los JSON de `partidas/`, los PDF y el RAG, y también la memoria conversacional (SQLite en `partidas/`). Al volver a abrir la app, cada sesión de navegador abre un chat nuevo, pero cualquier partida se puede retomar desde su JSON con `/retomar`. Conversar con el agente consume créditos del proveedor.
 
 ### Tests
 
@@ -337,8 +352,12 @@ pytest
 - [x] Registro de decisiones.
 - [x] Guardado de capítulos.
 - [x] Generación de PDF.
-- [x] Pruebas individuales de las seis tools.
-- [x] Estado JSON integrado con la sesión de Streamlit (el id de partida es también el `thread_id`).
+- [x] Pruebas individuales de las diez tools.
+- [x] Estado JSON integrado con la sesión de Streamlit (el chat tiene su propio `thread_id`; la partida activa viaja en `ContextoPartida` y puede no haber ninguna).
+- [x] Chat conversacional: preguntas sobre partidas anteriores, arrancar por instrucción y retomar en el mismo chat.
+- [x] Comandos deterministas `/nueva`, `/retomar`, `/partidas` y `/ayuda` resueltos por la app, sin gastar LLM.
+- [x] Listado de partidas abiertas (últimas 3, las que no llegaron a un final) y retomado determinista por número, sidebar o propuesta del agente.
+- [x] Cambio de partida activa: el agente propone con tools, la app valida y aplica; el id de partida nunca lo elige el LLM.
 - [x] Id de partida fijado por la aplicación, no por el LLM.
 - [x] Finalización garantizada en el capítulo 5 (desenlace sin opciones).
 - [x] Inventario y pistas con validación (catálogo de objetos).
@@ -357,7 +376,8 @@ pytest
 ### Implementado, pendiente de pruebas con un LLM real
 
 - [ ] Una partida completa de punta a punta con el modelo real (el agente está armado con `create_agent` y probado con un modelo falso).
-- [ ] Uso coordinado de las seis herramientas siguiendo el prompt.
+- [ ] Uso coordinado de las diez herramientas siguiendo el prompt.
+- [ ] El flujo de chat con modelo real: arrancar por instrucción, meta-consultas y retomado propuesto por el agente (los comandos y el retomado determinista ya están probados sin LLM).
 - [ ] Memoria conversacional mediante checkpointer.
 - [ ] Que el modelo respete el catálogo de objetos.
 - [ ] Que el modelo pida la imagen de cada capítulo con consultas útiles.
@@ -370,7 +390,7 @@ pytest
 - [ ] Opciones como botones y descarga del PDF en la interfaz.
 - [ ] Reglas de consecuencias más complejas (por ejemplo, puertas que exigen una llave).
 - [ ] Ampliar el corpus y evitar que el RAG devuelva pistas todavía inaccesibles.
-- [ ] Persistir la conversación entre reinicios.
+- [ ] Retomar el mismo chat tras cerrar el navegador (hoy cada sesión de navegador abre un chat nuevo; las partidas se retoman desde su JSON).
 - [ ] Probar la instalación desde cero.
 - [ ] Completar documentación y presentación final.
 
