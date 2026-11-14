@@ -10,7 +10,7 @@ El agente narra en segunda persona y permite tomar decisiones que modifican el d
 
 El proyecto combina:
 
-- **LLM:** conmutable entre proveedores desde el `.env` (NVIDIA o DeepSeek), para generar las narraciones.
+- **LLM:** conmutable entre proveedores desde el `.env` (NVIDIA, DeepSeek u OpenRouter), para generar las narraciones.
 - **RAG:** proporciona conocimiento propio sobre el universo narrativo.
 - **Tools:** permiten consultar información, registrar decisiones, guardar capítulos y generar archivos.
 - **Memoria:** checkpointer de LangChain para conservar el contexto conversacional.
@@ -57,7 +57,7 @@ Carpetas que se generan al ejecutar (están en `.gitignore` y no se versionan): 
 **Función de cada archivo:**
 
 - `agente.py`: arma el agente con el modelo de `proveedores.py`, las herramientas disponibles, el prompt y el checkpointer.
-- `proveedores.py`: fábrica de modelos; elige NVIDIA o DeepSeek según `LLM_PROVIDER` del `.env` y resuelve `LLM_MODEL` y `LLM_TIMEOUT`.
+- `proveedores.py`: fábrica de modelos; elige NVIDIA, DeepSeek u OpenRouter según `LLM_PROVIDER` del `.env` y resuelve `LLM_MODEL` y `LLM_TIMEOUT`.
 - `scripts/probar_modelo.py`: prueba manual del modelo configurado (tool calling y razonamiento), fuera de la app; incluye medición de latencia y comparación entre modelos.
 - `app.py`: implementa la interfaz web mediante Streamlit: chat, streaming del turno, razonamiento del modelo, imágenes y panel de estado.
 - `herramientas.py`: contiene las seis tools disponibles para el agente y `ContextoPartida`, que lleva el id de la partida a las tools.
@@ -173,7 +173,7 @@ Pendiente: incorporar la descarga desde Streamlit. La fuente (DejaVu Sans) viene
 - Python 3.11 o 3.12.
 - Git.
 - Acceso a internet para descargar el modelo de embeddings.
-- La API Key del proveedor que elijas (NVIDIA o DeepSeek) con crédito disponible para ejecutar el agente.
+- La API Key del proveedor que elijas (NVIDIA, DeepSeek u OpenRouter) con crédito disponible para ejecutar el agente.
 
 ### Clonar el repositorio
 
@@ -201,12 +201,12 @@ pip install -r requirements.txt
 El proveedor se elige en el `.env`, sin tocar código (ver `.env.example`):
 
 ```env
-LLM_PROVIDER=nvidia            # nvidia | deepseek (sin definir: deepseek)
+LLM_PROVIDER=nvidia            # nvidia | deepseek | openrouter (sin definir: deepseek)
 LLM_MODEL=nvidia/nemotron-3-ultra-550b-a55b
 NVIDIA_API_KEY=tu_clave        # o DEEPSEEK_API_KEY si usás deepseek
 ```
 
-`LLM_MODEL` es opcional: si queda vacío se usa el default del proveedor (`nvidia/nemotron-3-ultra-550b-a55b` o `deepseek-flash`). La clave de NVIDIA se obtiene en [build.nvidia.com](https://build.nvidia.com). Agregar otro proveedor es sumar una función y una entrada en `PROVEEDORES` dentro de `proveedores.py`.
+`LLM_MODEL` es opcional: si queda vacío se usa el default del proveedor (`nvidia/nemotron-3-ultra-550b-a55b`, `deepseek-flash` o `deepseek/deepseek-v4.1-flash-1017`, respectivamente). La clave de NVIDIA se obtiene en [build.nvidia.com](https://build.nvidia.com). Agregar otro proveedor es sumar una función y una entrada en `PROVEEDORES` dentro de `proveedores.py`.
 
 `LLM_TIMEOUT` (opcional, default 120) es el tiempo máximo en segundos de cada llamada al modelo. Si se agota, o el proveedor responde 429/502/503/504, el middleware de `middleware_reintentos.py` reintenta hasta 3 veces esperando 2, 4 y 8 segundos. El mismo middleware repite la llamada hasta dos veces cuando el modelo devuelve una respuesta vacía o con la tool call mal formada (en el último intento se le recuerda el formato), y guarda el mensaje crudo en `logs/` para poder diagnosticarlo.
 
@@ -221,6 +221,21 @@ python scripts/probar_modelo.py --latencia # repite la prueba 2 veces y mide cad
 python scripts/probar_modelo.py --modelos nvidia/nemotron-3-ultra-550b-a55b,meta/llama-3.3-70b-instruct
                                            # compara varios modelos en una tabla (pisa LLM_MODEL)
 ```
+
+### Configurar OpenRouter con DeepSeek V4.1 Flash
+
+Instalar las dependencias actualizadas (`pip install -r requirements.txt`) y agregar o reemplazar estas variables en el `.env` local, sin duplicarlas:
+
+```env
+LLM_PROVIDER=openrouter
+LLM_MODEL=deepseek/deepseek-v4.1-flash-1017
+OPENROUTER_API_KEY=tu_clave_de_openrouter
+LLM_TIMEOUT=120
+```
+
+Esta opción usa `ChatOpenRouter` de la integración oficial `langchain-openrouter`. La clave es de **OpenRouter**, no `DEEPSEEK_API_KEY`; no hace falta configurar NVIDIA ni DeepSeek directo. Reiniciar Streamlit después de cambiar el proveedor.
+
+Para comprobar la conexión y el tool calling, ejecutar `python scripts/probar_modelo.py`. Esta prueba hace llamadas reales y consume créditos; `--listar` solo lista modelos NVIDIA, no OpenRouter. Después se puede abrir `streamlit run app.py` (con el RAG previamente preparado). La configuración y el enlace de tools se prueban automáticamente sin red; eso no acredita una partida completa con este modelo ni garantiza que el proveedor devuelva razonamiento.
 
 ### Configurar DeepSeek
 
@@ -265,7 +280,7 @@ No necesita la API de DeepSeek.
 streamlit run app.py
 ```
 
-La interfaz requiere configurar previamente la API Key del proveedor elegido (`NVIDIA_API_KEY` o `DEEPSEEK_API_KEY`).
+La interfaz requiere configurar previamente la API Key del proveedor elegido (`NVIDIA_API_KEY`, `DEEPSEEK_API_KEY` u `OPENROUTER_API_KEY`).
 
 Al abrir la app se crea una partida nueva. Con el botón "Nueva partida" se crea otra.
 

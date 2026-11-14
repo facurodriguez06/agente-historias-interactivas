@@ -1,10 +1,10 @@
 """Fábrica de modelos de chat.
 
-LangChain ya unifica la interfaz: ChatNVIDIA, ChatDeepSeek y el resto son
+LangChain ya unifica la interfaz: ChatNVIDIA, ChatDeepSeek y ChatOpenRouter son
 BaseChatModel, así que el agente los usa igual (invoke, bind_tools, etc.).
 Este módulo solo decide cuál instanciar según el .env:
 
-    LLM_PROVIDER=nvidia | deepseek  (sin definir: deepseek)
+    LLM_PROVIDER=nvidia | deepseek | openrouter  (sin definir: deepseek)
     LLM_MODEL=<nombre del modelo>   (opcional; cada proveedor tiene un default)
 
 Agregar un proveedor = una función _crear_<proveedor>(modelo) + una entrada
@@ -69,10 +69,29 @@ def _crear_deepseek(modelo):
     )
 
 
-PROVEEDORES = {"nvidia": _crear_nvidia, "deepseek": _crear_deepseek}
+def _crear_openrouter(modelo):
+    _exigir_clave("OPENROUTER_API_KEY")
+    from langchain_openrouter import ChatOpenRouter
+
+    return ChatOpenRouter(
+        model=modelo,
+        temperature=TEMPERATURA,
+        max_tokens=MAX_TOKENS,
+        max_retries=MAX_REINTENTOS,
+        # A diferencia de los otros proveedores, OpenRouter recibe milisegundos.
+        timeout=int(_timeout() * 1000),
+    )
+
+
+PROVEEDORES = {
+    "nvidia": _crear_nvidia,
+    "deepseek": _crear_deepseek,
+    "openrouter": _crear_openrouter,
+}
 MODELOS_POR_DEFECTO = {
     "nvidia": "nvidia/nemotron-3-ultra-550b-a55b",
     "deepseek": "deepseek-flash",
+    "openrouter": "deepseek/deepseek-v4.1-flash-1017",
 }
 
 
