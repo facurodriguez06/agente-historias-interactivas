@@ -61,15 +61,15 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
 - T6 (S1–S7): `app.py`: hilo de chat propio (`thread_id` del chat, no de la
   partida), partida activa opcional, enrutamiento de comandos, retomar en el
   mismo chat con reconstrucción del historial, sidebar coherente. Worker C
-  (mwh0th1m-3-b225). Commit U3: 52e3bb4.
+  (mwh0th1m-3-b225). Commit U3: e85a004.
 - T7 (S1–S7): README y verificación final de la suite completa. Inline (el
   runtime rechazó un tercer worker y ordenó ejecución inline; unidad de
-  docs). Commit U3: 52e3bb4.
+  docs). Commit U3: e85a004.
 - T8 (S8, S9): fix de `formatear_listado` ante resumen/título vacíos (con
   test RED reproduciendo el IndexError) + botón "Nuevo chat" en el sidebar
   que resetea la conversación a estado inicial (nuevo `id_chat`, historial
   limpio con saludo, sin partida activa; las partidas quedan guardadas y se
-  retoman con /retomar). Commit U4: d95a302.
+  retoman con /retomar). Commit U4: 7e24888.
 
 ## Log
 
