@@ -1,16 +1,17 @@
-# Pistas y objetos
 
-## Llave oxidada
-Es pequeña y tiene una marca con forma de luna. Puede aparecer en lugares plausibles de la planta baja. Recogerla exige que el usuario elija hacerlo. Una vez recogida, debe figurar en el inventario. No se puede usar una llave que no se posee.
+# Clues and Objects
 
-## Nota con iniciales
-Es una hoja escrita a mano con dos iniciales y una referencia a una hora concreta. Su interpretación puede variar según otras pistas halladas. La nota no identifica automáticamente al responsable del misterio.
+## Llave oxidada (Rusty Key)
+A small key with a moon-shaped marking. It may appear in plausible locations on the ground floor. Picking it up requires the user to explicitly choose to do so. Once collected, it must appear in the inventory under the exact name "Llave oxidada". A key cannot be used unless the user possesses it.
 
-## Reloj detenido
-El reloj del vestíbulo marca siempre las 02:17. Es un elemento ambiental que puede transformarse en pista si el usuario decide examinarlo. No inventar que el usuario vio su interior sin haberlo abierto.
+## Nota con iniciales (Note with Initials)
+A handwritten note containing two initials and a reference to a specific time. Its interpretation may vary depending on other clues discovered. The note does not automatically identify the person responsible for the mystery. If collected, its inventory name must be exactly "Nota con iniciales".
 
-## Caja metálica
-Está en el invernadero y tiene un cierre de combinación. Puede contener un fragmento de documento, pero solo debe revelarse después de justificar cómo se abrió.
+## Stopped Clock
+The clock in the entrance hall always shows 02:17. It is an environmental element that may become a clue if the user decides to examine it. Do not invent that the user has seen its internal mechanism unless they have actually opened it.
 
-## Principio de continuidad
-Un objeto puede estar disponible en el mundo sin haber sido recogido. Las descripciones del corpus indican posibilidades; el inventario real y los descubrimientos realizados pertenecen al estado de la partida, no al RAG. Este documento no confirma automáticamente que un evento ya ocurrió.
+## Metal Box
+The metal box is located in the greenhouse and has a combination lock. It may contain a document fragment, but its contents must only be revealed after establishing how the box was opened. If the fragment is collected, its inventory name must be exactly "Fragmento de documento".
+
+## Continuity Principle
+An object may exist in the world without having been collected. The corpus descriptions indicate possibilities; the actual inventory and discoveries belong to the current game state, not to the RAG system. This document does not automatically confirm that an event has already occurred.

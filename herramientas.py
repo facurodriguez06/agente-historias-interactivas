@@ -1,8 +1,7 @@
-"""Tools del agente: RAG del mundo narrativo, estado de la partida, imágenes y exportación a PDF.
+"""Agent tools for RAG, game state, images, and PDF export.
 
-El id de la partida NO es un argumento de las tools: lo fija la aplicación en el
-contexto de cada ejecución (ContextoPartida) y las tools lo leen de ahí. Así el LLM
-no puede elegir ni inventar de qué partida lee o escribe.
+The game ID is provided by the application through ContextoPartida.
+The LLM cannot choose or invent which game session to access.
 """
 
 from dataclasses import dataclass
@@ -21,7 +20,7 @@ from ingestar import DB_DIR, MODELO_EMBEDDINGS, COLECCION
 
 @dataclass
 class ContextoPartida:
-    """Datos que fija la aplicación en cada ejecución del agente (no los decide el LLM)."""
+    """Game session context provided by the application."""
 
     id_partida: str
 
@@ -38,27 +37,51 @@ def obtener_base():
 
 @tool
 def buscar_contexto_narrativo(consulta: str) -> str:
-    """Busca lugares, ambientación, pistas y reglas del universo narrativo usando RAG. Entrada: consulta en español. Devuelve fragmentos con su fuente."""
+    """Retrieve setting details, locations, objects, clues, and world rules using RAG.
+
+    The consulta argument must be a search query in English.
+    The retrieved documents are written in English.
+    Returns relevant excerpts and their sources.
+
+    Retrieved information describes the world, not events
+    that have necessarily happened in the current game.
+    """
     if not DB_DIR.exists():
-        return "ERROR: base RAG no creada. Ejecutar primero: python ingestar.py"
+        return "ERROR: RAG database not found. Run python ingestar.py first."
+
     try:
         documentos = obtener_base().similarity_search(consulta, k=3)
+
         if not documentos:
-            return "No se encontró información relevante en el corpus."
+            return "No relevant information was found in the corpus."
+
         return "\n\n".join(
-            f"Fuente: {doc.metadata.get('source', 'desconocida')}\nContenido: {doc.page_content}"
+            f"Source: {doc.metadata.get('source', 'unknown')}\n"
+            f"Content: {doc.page_content}"
             for doc in documentos
         )
+
     except Exception as exc:
-        return f"ERROR al consultar RAG: {type(exc).__name__}: {exc}"
+        return f"ERROR querying RAG: {type(exc).__name__}: {exc}"
 
 
 @tool
-def consultar_estado_partida(runtime: ToolRuntime[ContextoPartida]) -> dict:
-    """Devuelve el estado de la partida en curso: capítulos escritos, decisiones tomadas, inventario, pistas descubiertas, si terminó y cuál es el siguiente paso. Sin argumentos."""
+def consultar_estado_partida(
+    runtime: ToolRuntime[ContextoPartida],
+) -> dict:
+    """Retrieve the current game state.
+
+    Returns written chapters, decisions, inventory,
+    discovered clues, completion status, and the next step.
+    Takes no arguments.
+    """
     try:
         estado = estado_partida.consultar_estado(runtime.context.id_partida)
-        return {**estado, "siguiente_paso": estado_partida.siguiente_paso(estado)}
+        return {
+            **estado,
+            "siguiente_paso": estado_partida.siguiente_paso(estado),
+        }
+
     except (ValueError, OSError) as e:
         return {"error": str(e)}
 
@@ -71,11 +94,26 @@ def registrar_decision(
     objetos_usados: list[str] | None = None,
     pistas_descubiertas: list[str] | None = None,
 ) -> dict:
-    """Registra la opción (1, 2 o 3) que el usuario eligió en el capítulo pendiente y actualiza inventario y pistas.
-    - objetos_recogidos: solo objetos que el usuario ELIGIÓ recoger con esta decisión.
-    - objetos_usados: objetos que esta decisión usa; deben estar ya en el inventario.
-    - pistas_descubiertas: pistas nuevas que el usuario descubrió con esta decisión (frases cortas).
-    Los objetos deben llamarse exactamente como figura en las instrucciones. Si devuelve error, corregí y reintentá."""
+    """Record the user's selected option (1, 2, or 3).
+
+    Call buscar_contexto_narrativo BEFORE this tool.
+
+    Arguments:
+    - opcion: the option actually chosen by the user.
+    - objetos_recogidos: objects explicitly collected through
+      the selected action. Use their exact Spanish catalog names.
+    - objetos_usados: objects used by the selected action.
+      They must already be in the inventory.
+    - pistas_descubiertas: new clues genuinely discovered
+      through the selected action, as short Spanish phrases.
+
+    Never invent clues just to fill pistas_descubiertas.
+    Simply entering a room does not automatically reveal a clue.
+    If the user discovers nothing new, use pistas_descubiertas=[].
+
+    Respect the retrieved RAG context and existing game state.
+    If an error occurs, correct the arguments and retry.
+    """
     try:
         return estado_partida.registrar_decision(
             runtime.context.id_partida,
@@ -84,6 +122,7 @@ def registrar_decision(
             objetos_usados,
             pistas_descubiertas,
         )
+
     except (ValueError, OSError) as e:
         return {"error": str(e)}
 
@@ -95,40 +134,86 @@ def guardar_capitulo(
     opciones: list[str],
     runtime: ToolRuntime[ContextoPartida],
 ) -> dict:
-    """Guarda el capítulo que estás por mostrar: título, texto narrado y opciones. Capítulos 1 a 4: exactamente tres opciones. Capítulo 5 (desenlace): opciones=[] y la historia queda terminada."""
+    """Save a chapter before displaying it to the user.
+
+    The title, narrative text, and choices must be written
+    in Argentine Spanish.
+
+    Chapters 1 through 4 require exactly three choices.
+    Chapter 5 is the ending and requires opciones=[].
+
+    The chapter must remain consistent with the retrieved
+    RAG context, the player's decisions, inventory, and clues.
+    """
     try:
         return estado_partida.guardar_capitulo(
-            runtime.context.id_partida, titulo, texto, opciones
+            runtime.context.id_partida,
+            titulo,
+            texto,
+            opciones,
         )
+
     except (ValueError, OSError) as e:
         return {"error": str(e)}
 
 
 @tool
-def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
-    """Genera el PDF con los capítulos y decisiones de la partida. Solo funciona cuando la historia terminó (capítulo 5 guardado). Devuelve la ruta del archivo."""
+def generar_pdf_historia(
+    runtime: ToolRuntime[ContextoPartida],
+) -> str:
+    """Generate a PDF containing the completed story.
+
+    Includes the chapters and recorded decisions.
+    This tool can only be used after chapter 5 is saved.
+    Returns the generated file path.
+    """
     try:
         return generar_pdf(runtime.context.id_partida)
+
     except (ValueError, OSError) as e:
-        return f"Error al generar PDF: {e}"
+        return f"Error generating PDF: {e}"
 
 
 @tool
-def buscar_imagen_capitulo(consulta: str, runtime: ToolRuntime[ContextoPartida]) -> dict:
-    """Busca en Unsplash una foto de ambiente para el capítulo que acabás de guardar y la adjunta (se muestra en la interfaz y en el PDF). Llamala una vez por capítulo, justo después de guardar_capitulo.
-    - consulta: 3 a 5 palabras EN INGLÉS sobre el lugar o clima de la escena, por ejemplo "foggy old mansion library" o "rainy greenhouse glass". No uses nombres de personas.
-    Si devuelve error, reintentá UNA vez con una consulta más genérica (por ejemplo "foggy mansion"); si vuelve a fallar, seguí sin imagen."""
+def buscar_imagen_capitulo(
+    consulta: str,
+    runtime: ToolRuntime[ContextoPartida],
+) -> dict:
+    """Find an atmospheric Unsplash image for the latest chapter.
+
+    Call this tool once immediately after guardar_capitulo.
+
+    - consulta: 3 to 5 English words describing the scene
+      or its atmosphere.
+    - Examples: "foggy old mansion library",
+      "rainy greenhouse glass".
+    - Do not include people's names.
+
+    If the search fails, retry once using a more general query.
+    If it fails again, continue without an image.
+
+    The image is attached to the chapter and can be displayed
+    in the interface and included in the PDF.
+    """
     try:
         id_partida = runtime.context.id_partida
-        # Se valida antes de llamar a la API para no gastar consultas si no corresponde.
+
+        # Validate before calling Unsplash to avoid unnecessary requests.
         numero, ya_usadas = estado_partida.capitulo_para_imagen(id_partida)
-        foto = imagenes.obtener_imagen(consulta, excluir_ids=ya_usadas)
+
+        foto = imagenes.obtener_imagen(
+            consulta,
+            excluir_ids=ya_usadas,
+        )
+
         estado_partida.adjuntar_imagen(id_partida, foto)
+
         return {
             "ok": True,
             "capitulo": numero,
             "autor": foto["autor"],
             "descripcion": foto["descripcion"],
         }
+
     except (ValueError, OSError) as e:
         return {"error": str(e)}

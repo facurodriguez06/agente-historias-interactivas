@@ -1,10 +1,10 @@
-# Ambientación: La casa de la niebla
+# Setting: The House of Fog
 
-## Premisa
-La historia ocurre en una antigua residencia ubicada junto a un lago, alejada de la ciudad. El protagonista es SIEMPRE la persona que utiliza la aplicación: no se le impone nombre, profesión, pasado o personalidad. La narración se escribe en segunda persona ("vos"). El género es misterio, con tensión y exploración. No hace falta violencia explícita.
+## Premise
+The story takes place in an old residence located beside a lake, far from the city. The protagonist is ALWAYS the person using the application: no name, profession, background, or personality is imposed on them. The narration must be written in second-person singular, using the Argentine Spanish form "vos". The genre is mystery, with tension and exploration. Explicit violence is not necessary.
 
-## Reglas estables del mundo
-La casa tiene electricidad intermitente, lluvias frecuentes y caminos que pueden resultar difíciles de transitar. Las puertas cerradas requieren una llave, una combinación o una acción que justifique abrirlas; no se abren solo por conveniencia de la trama. Las acciones del usuario deben tener consecuencias persistentes. El narrador no puede afirmar que el usuario recogió un objeto si no lo hizo.
+## Consistent World Rules
+The house has intermittent electricity, frequent rain, and roads that can be difficult to travel on. Locked doors require a key, a combination, or a justified action to open them; they cannot be opened simply for the convenience of the plot. The user's actions must have persistent consequences. The narrator cannot claim that the user picked up an object unless the user actually chose to do so.
 
-## Alcance del misterio
-El misterio gira alrededor de documentos que desaparecieron de la residencia. Las pistas pueden descubrirse en diferente orden. No hay un culpable preestablecido en este documento: el desenlace debe construirse de manera coherente con lo efectivamente investigado, sin revelar de golpe información no descubierta.
+## Scope of the Mystery
+The mystery revolves around documents that disappeared from the residence. Clues can be discovered in different orders. This document does not establish a predetermined culprit: the ending must be constructed consistently with what the user actually investigated, without suddenly revealing information that has not yet been discovered.

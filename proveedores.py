@@ -19,7 +19,9 @@ from langchain_core.language_models import BaseChatModel
 TEMPERATURA = 0.5
 MAX_TOKENS = 1000
 MAX_REINTENTOS = 2
-TIMEOUT_POR_DEFECTO = 120  # segundos; ChatNVIDIA trae 60 y con modelos grandes no alcanza
+TIMEOUT_POR_DEFECTO = (
+    120  # segundos; ChatNVIDIA trae 60 y con modelos grandes no alcanza
+)
 
 
 def _exigir_clave(variable):
@@ -37,7 +39,9 @@ def _timeout():
     except ValueError:
         segundos = 0
     if segundos <= 0:
-        raise RuntimeError(f"LLM_TIMEOUT={valor!r} no es válido: tiene que ser un número de segundos mayor a 0")
+        raise RuntimeError(
+            f"LLM_TIMEOUT={valor!r} no es válido: tiene que ser un número de segundos mayor a 0"
+        )
     return segundos
 
 
