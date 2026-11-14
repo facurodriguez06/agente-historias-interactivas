@@ -1,4 +1,5 @@
 """Interfaz Streamlit del prototipo: chat, memoria y logs de tools en vivo."""
+
 import streamlit as st
 from langchain_core.messages import AIMessage
 from agente import crear_agente
@@ -8,8 +9,10 @@ from imagenes import URL_UNSPLASH, con_utm
 from pasos_agente import capitulo_de_respaldo, pasos_de_mensaje
 from proveedores import proveedor_y_modelo
 
-st.set_page_config(page_title="Historias interactivas", page_icon="📖", layout="centered")
-st.title("📖 Historias interactivas")
+st.set_page_config(
+    page_title="Historias interactivas", page_icon="📖", layout="centered"
+)
+st.title("Historias interactivas")
 st.caption("Prototipo Unidad 5 · RAG + create_agent + checkpointer")
 
 # Un solo identificador por partida: es el id del JSON y también el thread_id del checkpointer.
@@ -37,10 +40,14 @@ with st.sidebar:
         st.session_state.historial_visible = []
         st.session_state.imagenes_mostradas = set()
         st.rerun()
-    proveedor, modelo = proveedor_y_modelo()  # si fuera inválido, crear_agente ya habría frenado la app
+    proveedor, modelo = (
+        proveedor_y_modelo()
+    )  # si fuera inválido, crear_agente ya habría frenado la app
     st.caption(f"**Modelo:** {proveedor} · `{modelo}`")
-    st.info("La memoria de la conversación dura mientras está abierta la sesión de Streamlit; "
-            "el estado de la partida se guarda en partidas/.")
+    st.info(
+        "La memoria de la conversación dura mientras está abierta la sesión de Streamlit; "
+        "el estado de la partida se guarda en partidas/."
+    )
     panel_estado = st.empty()
 
 
@@ -58,7 +65,9 @@ def mostrar_estado():
         st.write("**Inventario**")
         st.write("\n".join(f"- {o}" for o in estado["inventario"]) or "_vacío_")
         st.write("**Pistas**")
-        st.write("\n".join(f"- {p}" for p in estado["pistas_descubiertas"]) or "_ninguna_")
+        st.write(
+            "\n".join(f"- {p}" for p in estado["pistas_descubiertas"]) or "_ninguna_"
+        )
 
 
 mostrar_estado()
@@ -106,7 +115,9 @@ def dibujar_paso(paso):
     if paso["tipo"] == "razonamiento":
         with st.expander("💭 Razonamiento", expanded=True):
             # Un salto de línea por renglón y sin sangrías (que markdown tomaría por código).
-            st.caption("  \n".join(linea.strip() for linea in paso["texto"].splitlines()))
+            st.caption(
+                "  \n".join(linea.strip() for linea in paso["texto"].splitlines())
+            )
     elif paso["tipo"] == "tool":
         st.write(f"🔧 Tool: **{paso['nombre']}**")
         st.json(paso["args"], expanded=False)
@@ -125,7 +136,36 @@ for rol, contenido, imagenes, pasos in st.session_state.historial_visible:
         for url, pie in imagenes:
             st.image(url, caption=pie)
 
-pregunta = st.chat_input("Ej.: Empezá una historia de misterio en la mansión")
+# Mostrar botones cuando hay un capítulo esperando una decisión
+opcion_elegida = None
+
+try:
+    estado = consultar_estado(st.session_state.id_partida)
+
+    if (
+        not estado["finalizada"]
+        and estado["capitulos"]
+        and len(estado["capitulos"]) == estado["capitulo_actual"] + 1
+    ):
+        st.write("**¿Qué querés hacer?**")
+
+        capitulo = estado["capitulos"][-1]
+
+        for i, opcion in enumerate(capitulo["opciones"], start=1):
+            if st.button(
+                f"{i}. {opcion}",
+                key=f"opcion_{st.session_state.id_partida}_{capitulo['numero']}_{i}",
+                use_container_width=True,
+            ):
+                opcion_elegida = str(i)
+
+except (ValueError, OSError):
+    pass
+
+# También permitimos escribir mensajes normalmente
+mensaje_escrito = st.chat_input("Escribí tu mensaje...")
+
+pregunta = opcion_elegida or mensaje_escrito
 if pregunta:
     st.session_state.historial_visible.append(("user", pregunta, [], []))
     with st.chat_message("user"):
@@ -149,7 +189,11 @@ if pregunta:
                             for paso in pasos_de_mensaje(mensaje):
                                 pasos.append(paso)
                                 dibujar_paso(paso)
-                            if isinstance(mensaje, AIMessage) and mensaje.text and not mensaje.tool_calls:
+                            if (
+                                isinstance(mensaje, AIMessage)
+                                and mensaje.text
+                                and not mensaje.tool_calls
+                            ):
                                 respuesta = mensaje.text
             except Exception as exc:
                 respuesta = f"Ocurrió un error: `{type(exc).__name__}: {exc}`"
@@ -161,3 +205,4 @@ if pregunta:
             st.image(url, caption=pie)
     st.session_state.historial_visible.append(("assistant", respuesta, imagenes, pasos))
     mostrar_estado()
+    st.rerun()
