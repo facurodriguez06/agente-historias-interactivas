@@ -58,7 +58,16 @@ def formatear_listado(abiertas):
         titulo = partida.get("titulo_ultimo_capitulo", "")
         if titulo:
             partes.append(f"«{titulo}»")
-        resumen = partida.get("resumen_ultimo_capitulo", "").strip().splitlines()[0]
+        # El resumen puede estar vacío (partida de 0 capítulos) o arrancar con
+        # líneas en blanco: se muestra la primera línea con contenido, si hay.
+        resumen = next(
+            (
+                linea.strip()
+                for linea in partida.get("resumen_ultimo_capitulo", "").splitlines()
+                if linea.strip()
+            ),
+            "",
+        )
         if resumen:
             partes.append(resumen)
         entradas.append(" — ".join(partes))

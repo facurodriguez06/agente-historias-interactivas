@@ -31,6 +31,16 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   la partida igual" (comportamiento a eliminar) — la partida no se crea al
   cargar la app ni arranca con cualquier mensaje.
 
+- S8: "me tira este error cuando pongo /retomar o /partidas" — el listado de
+  partidas abiertas no debe romper: se reprodujo con datos reales un
+  `IndexError: list index out of range` en `comandos_chat.formatear_listado`
+  cuando una partida abierta tiene `resumen_ultimo_capitulo` vacío (partida
+  creada sin capítulos). Reproducción: `estado_partida.listar_partidas_abiertas`
+  + `formatear_listado` sobre `partidas/` reales, 3 abiertas, una con 0 capítulos.
+- S9: "no tengo un boton para empezar un nuevo chat, y todas las partidas
+  arrancan o continuan en el chat actual" — hace falta un botón "Nuevo chat"
+  que limpie la conversación (hoy todo se acumula en el chat actual).
+
 ## Tasks
 
 - T1 (S3, S4): `estado_partida.listar_partidas_abiertas(limite)` con resumen
@@ -55,6 +65,11 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
 - T7 (S1–S7): README y verificación final de la suite completa. Inline (el
   runtime rechazó un tercer worker y ordenó ejecución inline; unidad de
   docs). Commit U3: 52e3bb4.
+- T8 (S8, S9): fix de `formatear_listado` ante resumen/título vacíos (con
+  test RED reproduciendo el IndexError) + botón "Nuevo chat" en el sidebar
+  que resetea la conversación a estado inicial (nuevo `id_chat`, historial
+  limpio con saludo, sin partida activa; las partidas quedan guardadas y se
+  retoman con /retomar). Commit U4: d95a302.
 
 ## Log
 
@@ -93,3 +108,8 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   memoria, ejecución, estado) y verificación final: pytest 216 passed,
   py_compile OK de los 6 módulos, imports OK. El flujo con LLM real queda
   pendiente (los comandos y el retomado determinista no usan LLM).
+- L7 (corrección del usuario, textual): "me tira este error cuando pongo
+  /retomar o /partidas" + "Ademas no tengo un boton para empezar un nuevo
+  chat, y todas las partidas arrancan o continuan en el chat actual".
+  Reproducción por el orquestador: IndexError en comandos_chat.formatear_listado
+  con una partida abierta de 0 capítulos (resumen_ultimo_capitulo vacío).

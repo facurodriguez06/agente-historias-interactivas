@@ -204,6 +204,23 @@ def ejecutar_nueva_partida():
     turno_del_agente(instruccion)
 
 
+def ejecutar_nuevo_chat():
+    """Reinicia la conversación al estado inicial de una app recién abierta.
+
+    Cambia el hilo del chat (id_chat nuevo), borra el historial y deja la app
+    sin partida activa. La partida que estaba activa, si la había, queda
+    guardada en disco: se retoma con /retomar. Solo se limpia el chat.
+    """
+    st.session_state.id_chat = uuid.uuid4().hex
+    st.session_state.id_partida = ""
+    st.session_state.historial_visible = [
+        ("assistant", comandos_chat.saludo_inicial(), [], [])
+    ]
+    st.session_state.imagenes_mostradas = set()
+    st.session_state.listado_pendiente = None
+    st.rerun()
+
+
 with st.sidebar:
     st.write("**Partida actual**")
     if st.session_state.id_partida:
@@ -212,6 +229,9 @@ with st.sidebar:
         st.info("Sin partida activa")
 
     nueva_pedida = st.button("Nueva partida")
+
+    nuevo_chat_pedida = st.button("Nuevo chat")
+    st.caption("Arranca una conversación nueva; las partidas quedan guardadas.")
 
     opciones_guardadas = partidas_guardadas()
     retomar_pedida = None
@@ -455,6 +475,9 @@ pregunta = opcion_elegida or mensaje_escrito
 # Botones del sidebar: mismos caminos que los comandos del chat.
 if nueva_pedida:
     ejecutar_nueva_partida()
+
+if nuevo_chat_pedida:
+    ejecutar_nuevo_chat()
 
 if retomar_pedida:
     if retomar_partida_determinista(retomar_pedida):

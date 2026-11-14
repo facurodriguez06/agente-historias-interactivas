@@ -297,6 +297,7 @@ Al abrir la app no hay ninguna partida activa: el chat saluda y queda a la esper
 - **`/nueva`**: crea una partida nueva, la activa y escribe el capítulo 1 en ese mismo turno.
 - **`/retomar`** y **`/partidas`**: listan las últimas 3 partidas abiertas ("abierta" = una partida que no llegó a su desenlace), con su id corto, capítulos y último capítulo. Respondiendo con el número se retoma esa partida en el mismo chat, reconstruyendo la historia desde su JSON; también se puede pedir en lenguaje natural.
 - **`/ayuda`**: muestra los comandos y qué puede hacer el chat.
+- **Botón "Nuevo chat"** (barra lateral): reinicia la conversación al estado inicial (saludo y chat nuevo) sin tocar las partidas guardadas; las que estaban abiertas se retoman con **`/retomar`**.
 - Preguntas sobre partidas anteriores (abiertas o terminadas): el asistente responde sin avanzar ni cerrar la partida activa y, si un capítulo estaba esperando decisión, te lo recuerda al final para seguir jugando.
 
 **Advertencia:** el flujo completo todavía no se probó con un LLM real. La aplicación no está validada como experiencia completa de juego.

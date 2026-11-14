@@ -102,6 +102,38 @@ def test_listado_sin_capitulos_no_muestra_titulo():
     assert f"0 de {ep.TOTAL_CAPITULOS}" in texto
 
 
+def test_listado_con_partida_de_cero_capitulos_no_rompe():
+    """S8: partida abierta de 0 capítulos (título y resumen vacíos) no rompe el listado."""
+    texto = cc.formatear_listado(
+        [resumen(capitulos_escritos=0, titulo_ultimo_capitulo="", resumen_ultimo_capitulo="")]
+    )
+    # Sin título ni resumen que mostrar, pero con id recortado y capítulos en cero.
+    assert "a1b2c3d4" in texto
+    assert f"0 de {ep.TOTAL_CAPITULOS} capítulos" in texto
+    assert "«" not in texto
+
+
+def test_listado_con_resumen_de_primeras_lineas_en_blanco():
+    """S8: si las primeras líneas del resumen están en blanco, se toma la primera con contenido."""
+    texto = cc.formatear_listado(
+        [
+            resumen(
+                resumen_ultimo_capitulo=(
+                    "\n \nVos despertaste en un vestíbulo.\n\nSeguiste caminando."
+                )
+            )
+        ]
+    )
+    assert "despertaste en un vestíbulo" in texto
+
+
+def test_listado_con_resumen_totalmente_en_blanco():
+    """S8: un resumen hecho solo de líneas en blanco se omite sin romper."""
+    texto = cc.formatear_listado([resumen(resumen_ultimo_capitulo="\n  \n")])
+    assert "a1b2c3d4" in texto
+    assert f"2 de {ep.TOTAL_CAPITULOS}" in texto
+
+
 def test_listado_con_resumenes_reales_de_estado_partida():
     """El formateo consume el dict que produce _resumen_de_partida sin tocar nada más."""
     estado = {
