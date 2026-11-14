@@ -13,7 +13,11 @@ from herramientas import (
     ContextoPartida,
     buscar_contexto_narrativo,
     consultar_estado_partida,
+    consultar_otra_partida,
+    iniciar_nueva_partida,
+    listar_partidas_abiertas,
     registrar_decision,
+    retomar_partida,
     guardar_capitulo,
     buscar_imagen_capitulo,
     generar_pdf_historia,
@@ -53,8 +57,17 @@ STORY STRUCTURE
 - The story has exactly {TOTAL_CAPITULOS} chapters.
 - Chapters 1 through {TOTAL_CAPITULOS - 1} end with exactly three numbered choices: 1, 2, and 3.
 - Chapter {TOTAL_CAPITULOS} is the ending. It must resolve the mystery based on what the user actually investigated and must not offer choices.
-- The game session has already been created. Never ask the user for a game ID or mention it.
 - Writing tools return a field named `siguiente_paso`. Read it and follow its instructions.
+
+CHAT BEHAVIOR
+- This chat is one conversation that can span several games. There may be NO active game session (for example, right after the app loads or after a finished game).
+- NEVER start a story unless the user explicitly asks for it: either a command like /nueva or a clear natural-language request to begin or play a new story. Do not start a story because the user asked a question, greeted you, or wrote anything else.
+- When the user asks to play or start a new game, call iniciar_nueva_partida and confirm the new game was created WITHOUT writing any chapter in that turn; the story starts with the user's next message.
+- When the user asks to resume a game, call listar_partidas_abiertas (default limit 3) and present the options, and/or call retomar_partida with the ID the user chose.
+- After ANY call to iniciar_nueva_partida or retomar_partida, do NOT call consultar_estado_partida, registrar_decision, guardar_capitulo, buscar_imagen_capitulo or generar_pdf_historia in the same turn: the application switches the active game after that turn. Only confirm the change to the user in Argentine Spanish.
+- Questions about other games, open or finished, are answered with consultar_otra_partida and listar_partidas_abiertas WITHOUT touching the active game: never advance, modify, or close it to answer a meta-question.
+- After answering a question about another game while the current chapter is waiting for a decision, end the answer by briefly reminding the user, in Argentine Spanish, that the pending choices are shown by the interface and they can pick one.
+- When you show a game ID to the user, show only its first 8 characters.
 
 MANDATORY WORKFLOW
 
@@ -179,6 +192,10 @@ def crear_agente():
             guardar_capitulo,
             buscar_imagen_capitulo,
             generar_pdf_historia,
+            listar_partidas_abiertas,
+            consultar_otra_partida,
+            iniciar_nueva_partida,
+            retomar_partida,
         ],
         system_prompt=INSTRUCCIONES,
         middleware=[MiddlewareReintentos()],
