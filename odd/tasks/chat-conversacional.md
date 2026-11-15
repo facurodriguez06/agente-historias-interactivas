@@ -86,7 +86,7 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
 - T9 (S3, S6, S10, S11): revisión de UX: sidebar tipo ChatGPT con
   chats-partida, retomar siempre en chat nuevo, /retomar eliminado, /nueva
   con semántica de instrucción de juego, botón único "Nuevo chat" que crea
-  partida a la espera; README. Commit U5.
+  partida a la espera; README. Commit U5: 855ab5e.
 
 ## Log
 
