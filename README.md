@@ -1,25 +1,35 @@
+
 # Agente de Historias Interactivas
 
 Trabajo Integrador — Modelos de Lenguaje | UTN FRM | Unidad 5
 
 ## 1. Descripción del proyecto
 
-Agente de inteligencia artificial desarrollado con **LangChain**, que genera historias interactivas de misterio donde el usuario es el protagonista.
+Agente de inteligencia artificial desarrollado con **LangChain**, capaz de generar historias interactivas de misterio en las que el usuario es el protagonista.
 
-El agente narra en segunda persona y permite tomar decisiones que modifican el desarrollo de la aventura.
+El agente narra en español, utilizando la segunda persona, y permite tomar decisiones que modifican el desarrollo de la aventura. Cada historia tiene cinco capítulos y las decisiones del jugador se guardan para mantener la continuidad narrativa.
 
-Cada chat es una partida (modelo ChatGPT: un chat, una partida): se pueden hacer preguntas sobre partidas anteriores sin salir de la partida en curso, empezar una historia nueva con una instrucción explícita y retomar cualquier partida guardada, que siempre se abre en un chat nuevo.
+La aplicación incluye una interfaz conversacional desarrollada con **Streamlit**, similar a un sistema de chats. Cada partida puede abrirse desde la barra lateral, retomarse, renombrarse o eliminarse.
 
-El proyecto combina:
+Además, el usuario puede consultar información sobre partidas anteriores sin modificar la partida que está jugando.
 
-- **LLM:** conmutable entre proveedores desde el `.env` (NVIDIA, DeepSeek u OpenRouter), para generar las narraciones.
-- **RAG:** proporciona conocimiento propio sobre el universo narrativo.
-- **Tools:** permiten consultar información, registrar decisiones, guardar capítulos y generar archivos.
-- **Memoria:** checkpointer de LangChain para conservar el contexto conversacional.
-- **Streamlit:** interfaz web para interactuar con el agente.
-- **ReportLab:** biblioteca para exportar las historias a PDF.
+### Tecnologías utilizadas
 
-**Objetivo final:** generar una historia de cinco capítulos, con tres alternativas por capítulo, y permitir descargarla como PDF.
+- **LangChain y LangGraph:** construcción del agente, herramientas y memoria.
+- **LLM:** integración con NVIDIA, DeepSeek y OpenRouter.
+- **RAG:** recuperación de información sobre el universo narrativo.
+- **Hugging Face:** generación de embeddings multilingües.
+- **ChromaDB:** almacenamiento de la base vectorial.
+- **Streamlit:** interfaz web conversacional.
+- **Unsplash API:** búsqueda de imágenes para ilustrar los capítulos.
+- **ReportLab:** generación de historias en PDF.
+- **JSON:** persistencia del estado de cada partida.
+- **SQLite:** almacenamiento de checkpoints del agente.
+- **Pytest:** pruebas automáticas.
+
+**Objetivo:** ofrecer una experiencia narrativa interactiva de misterio, con decisiones, memoria, recuperación de contexto, imágenes y exportación de la historia completa a PDF.
+
+---
 
 ## 2. Estructura del proyecto
 
@@ -55,124 +65,259 @@ agente-historias-interactivas/
 └── .gitignore
 ```
 
-Carpetas que se generan al ejecutar (están en `.gitignore` y no se versionan): `chroma_db/` (base vectorial), `partidas/` (estado JSON de cada partida), `historias_generadas/` (PDF), `logs/` (volcados de diagnóstico).
+### Función de los principales archivos
 
-**Función de cada archivo:**
+- **`agente.py`:** configura el agente mediante `create_agent`, define sus instrucciones, registra las herramientas y conecta el checkpointer.
+- **`proveedores.py`:** permite elegir el proveedor y modelo de lenguaje desde el archivo `.env`.
+- **`app.py`:** implementa la interfaz Streamlit, el chat, la barra lateral, la navegación entre partidas, las decisiones y la visualización de herramientas.
+- **`herramientas.py`:** define las diez herramientas disponibles para el agente.
+- **`estado_partida.py`:** administra los JSON de las partidas y valida las reglas del juego.
+- **`comandos_chat.py`:** procesa comandos como `/nueva`, `/partidas` y `/ayuda`.
+- **`pasos_agente.py`:** procesa los mensajes del agente para mostrar herramientas, resultados y razonamiento en la interfaz.
+- **`middleware_reintentos.py`:** implementa reintentos ante errores del proveedor o respuestas inválidas.
+- **`diagnostico.py`:** guarda información para analizar respuestas problemáticas del modelo.
+- **`ingestar.py`:** procesa los documentos del corpus y construye la base vectorial.
+- **`imagenes.py`:** consulta Unsplash y selecciona imágenes considerando la ubicación y ambientación del capítulo.
+- **`generar_pdf.py`:** genera el documento PDF con los capítulos, decisiones e imágenes.
+- **`scripts/probar_modelo.py`:** permite verificar el funcionamiento de los modelos y sus llamadas a herramientas.
+- **`tests/`:** contiene las pruebas automáticas.
 
-- `agente.py`: arma el agente con el modelo de `proveedores.py`, las herramientas disponibles, el prompt y el checkpointer.
-- `proveedores.py`: fábrica de modelos; elige NVIDIA, DeepSeek u OpenRouter según `LLM_PROVIDER` del `.env` y resuelve `LLM_MODEL` y `LLM_TIMEOUT`.
-- `scripts/probar_modelo.py`: prueba manual del modelo configurado (tool calling y razonamiento), fuera de la app; incluye medición de latencia y comparación entre modelos.
-- `app.py`: implementa la interfaz web mediante Streamlit: chat, barra lateral con la lista de chats-partida estilo ChatGPT, botón único "Nuevo chat", enrutamiento de los comandos deterministas, streaming del turno, razonamiento del modelo, imágenes y panel de estado. Es la autoridad del cambio de partida activa: las tools del agente proponen, la app valida y aplica.
-- `herramientas.py`: contiene las diez tools disponibles para el agente (juego, meta-consulta y control de sesión) y `ContextoPartida`, que lleva el id de la partida activa a las tools (vacío cuando no hay partida).
-- `estado_partida.py`: administra los estados de partida mediante archivos JSON, hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre) y lista las partidas abiertas (las que no llegaron a un final).
-- `comandos_chat.py`: comandos deterministas del chat (`/nueva`, `/partidas`, `/ayuda`), formateo del listado de partidas abiertas, elección numérica, ayuda y saludo. Vive fuera de `app.py` para poder testearse sin Streamlit.
-- `middleware_reintentos.py`: middleware propio (API base de LangChain, `wrap_model_call`) que reintenta 429, timeouts y 502/503/504 con espera exponencial, y repite la llamada cuando el modelo devuelve una respuesta vacía o con la tool call mal formada.
-- `pasos_agente.py`: traduce los mensajes del agente a pasos para la interfaz (razonamiento, llamada a tool, resultado), arma el capítulo de respaldo cuando el turno termina sin texto y detecta los cambios de sesión que propone el agente (`iniciar_nueva_partida` / `retomar_partida`) para que la app los aplique; vive fuera de `app.py` para poder testearse sin Streamlit.
-- `diagnostico.py`: detecta las respuestas vacías del modelo y guarda el mensaje crudo en `logs/` para inspeccionarlo.
-- `ingestar.py`: procesa los documentos y construye la base vectorial RAG.
-- `generar_pdf.py`: crea el PDF a partir de los capítulos, decisiones e imágenes guardados.
-- `imagenes.py`: cliente de la API de Unsplash (búsqueda y atribución de la foto de cada capítulo; las fotos se muestran por hotlinking). Incluye un modo de prueba por línea de comandos.
-- `corpus/`: contiene los documentos que definen el universo narrativo.
-- `fonts/`: fuente DejaVu Sans y su licencia, para que el PDF salga igual en cualquier sistema operativo.
-- `tests/`: pruebas automáticas que no usan LLM ni red.
+### Archivos generados durante la ejecución
+
+Las siguientes carpetas se crean localmente y no se versionan en Git:
+
+| Carpeta | Contenido |
+|---|---|
+| `chroma_db/` | Base vectorial del sistema RAG. |
+| `partidas/` | Estados JSON y memoria SQLite. |
+| `historias_generadas/` | Historias exportadas en PDF. |
+| `logs/` | Archivos de diagnóstico. |
+
+El archivo `.env` también se excluye de Git para evitar publicar claves privadas.
+
+---
 
 ## 3. Sistema RAG
 
-El agente utiliza RAG (*Retrieval-Augmented Generation*) para consultar información sobre el mundo de la historia.
+El agente utiliza **Retrieval-Augmented Generation (RAG)** para consultar información relevante antes de generar los capítulos.
 
-El corpus inicial contiene tres documentos:
+Esto permite que las historias respeten las características del universo narrativo definido por el proyecto.
 
-1. `ambientacion.md`: premisa, características del universo y reglas narrativas.
-2. `lugares.md`: escenarios y ubicaciones disponibles.
-3. `pistas_y_objetos.md`: elementos y pistas relevantes para la aventura.
+### Corpus utilizado
 
-**Funcionamiento:**
+El corpus está formado por tres documentos Markdown:
 
-1. Se leen los documentos Markdown.
-2. Se dividen en fragmentos (*chunks*).
-3. Se generan embeddings mediante un modelo multilingüe de Hugging Face.
-4. Los vectores se almacenan en ChromaDB.
-5. El agente puede invocar la herramienta `buscar_contexto_narrativo` para recuperar los fragmentos más relevantes.
+1. **`ambientacion.md`:** describe la atmósfera y las reglas generales del mundo.
+2. **`lugares.md`:** define las ubicaciones disponibles, sus características y conexiones.
+3. **`pistas_y_objetos.md`:** contiene información sobre objetos, pistas y elementos de la investigación.
 
-**Estado:** implementado y probado.
+### Funcionamiento
 
-La ingesta inicial procesó 3 documentos y generó 8 fragmentos (con `chunk_size=650` y `chunk_overlap=100`; el número exacto depende del corpus del momento). La recuperación semántica se comprobó correctamente mediante una consulta de prueba.
+1. `ingestar.py` lee los documentos del corpus.
+2. Los textos se dividen en fragmentos o *chunks*.
+3. Se generan embeddings con un modelo multilingüe de Hugging Face.
+4. Los embeddings se almacenan en ChromaDB.
+5. El agente utiliza `buscar_contexto_narrativo` para recuperar información relevante.
+6. El modelo emplea el contexto recuperado para generar la historia.
+
+El sistema diferencia entre el conocimiento general del mundo y los acontecimientos específicos de cada partida.
+
+Por ejemplo, el RAG puede indicar que existe una llave en determinado lugar, pero eso no significa que el jugador ya la haya encontrado.
+
+Los objetos descubiertos, decisiones y pistas se registran por separado en el estado de la partida.
+
+### Estado
+
+El sistema RAG está implementado y se ha probado mediante consultas de recuperación semántica y durante la generación de capítulos.
+
+---
 
 ## 4. Herramientas implementadas
 
-Se implementaron diez tools de LangChain.
+El agente dispone de **diez herramientas (`tools`)**, desarrolladas con LangChain.
 
-| Tool | Función |
+| Herramienta | Función |
 |---|---|
-| `buscar_contexto_narrativo` | Recupera información del corpus utilizando RAG. |
-| `consultar_estado_partida` | Devuelve capítulos, decisiones, inventario, pistas y el siguiente paso de la partida en curso. |
-| `registrar_decision` | Valida y guarda la opción elegida (1, 2 o 3) y actualiza inventario y pistas (`objetos_recogidos`, `objetos_usados`, `pistas_descubiertas`). |
-| `guardar_capitulo` | Almacena el título, texto y opciones de un capítulo: tres opciones en los capítulos 1 a 4; el capítulo 5 es el desenlace y no lleva opciones. |
-| `buscar_imagen_capitulo` | **Servicio externo (API de Unsplash).** Busca una foto de ambiente para el capítulo recién guardado, y guarda su URL original en el capítulo, con el crédito del fotógrafo. La foto se muestra por hotlinking, sin guardar copias. |
-| `generar_pdf_historia` | Genera el PDF ilustrado de la historia. Solo funciona cuando la historia terminó. |
-| `listar_partidas_abiertas` | Lista las últimas partidas abiertas (las que no llegaron a un final), con un resumen de cada una, para retomarlas o consultarlas. |
-| `consultar_otra_partida` | Lee el estado de otra partida (abierta o terminada) para responder preguntas sobre partidas anteriores. Es de solo lectura. |
-| `iniciar_nueva_partida` | Crea una partida nueva y devuelve su id. La aplicación la activa al terminar el turno; en ese turno el agente solo confirma. |
-| `retomar_partida` | Propone retomar una partida abierta por id. Valida que exista y no esté terminada; la aplicación la activa al terminar el turno. |
+| `buscar_contexto_narrativo` | Recupera información relevante del corpus mediante RAG. |
+| `consultar_estado_partida` | Consulta el estado de la partida activa. |
+| `registrar_decision` | Registra y valida la decisión del jugador. |
+| `guardar_capitulo` | Guarda un nuevo capítulo y su contexto narrativo. |
+| `buscar_imagen_capitulo` | Busca y asocia una imagen al capítulo. |
+| `generar_pdf_historia` | Genera el PDF de una historia finalizada. |
+| `listar_partidas_abiertas` | Lista las partidas que todavía pueden retomarse. |
+| `consultar_otra_partida` | Consulta una partida anterior sin modificar la actual. |
+| `iniciar_nueva_partida` | Propone crear una nueva partida desde el agente. |
+| `retomar_partida` | Propone retomar una partida abierta. |
 
 Las herramientas utilizan el decorador `@tool` de LangChain.
 
-**El id de la partida no es un argumento de las tools.** La aplicación lo fija en el contexto de cada ejecución (`ContextoPartida`, mediante `context_schema` y `ToolRuntime`) y las tools lo leen de ahí. El LLM no lo ve ni lo elige; puede haber sesiones sin partida activa (id vacío), en las que las tools del juego responden con un error claro. Cuando el agente quiere cambiar de partida, lo propone con `iniciar_nueva_partida` o `retomar_partida`, y la aplicación valida y aplica el cambio al terminar el turno. Las tools de escritura devuelven `siguiente_paso`, que le indica al agente qué corresponde hacer, y los errores de validación vuelven como `{"error": ...}` sin cortar el flujo (las de estado); `buscar_contexto_narrativo` y `generar_pdf_historia` informan el fallo como texto (`"ERROR: ..."` y `"Error al generar PDF: ..."`), también sin cortar el flujo.
+### Contexto de ejecución
 
-**Imágenes (`buscar_imagen_capitulo`).** El agente la llama una vez por capítulo, justo después de `guardar_capitulo`, con una consulta corta en inglés sobre el lugar de la escena (por ejemplo, "foggy old mansion library"). Cada capítulo admite una sola imagen, siempre la del último capítulo guardado, y no se repite una foto dentro de la misma historia. Si Unsplash falla (sin key, sin red, límite de consultas, sin resultados), la tool devuelve un error y la historia sigue sin imagen. **Hotlinking:** la partida guarda solo la URL original de la foto (`images.unsplash.com`, sin modificar) y la interfaz la carga directamente desde Unsplash, como piden sus pautas; la app no guarda copias de las fotos. Se avisa al endpoint de descarga de Unsplash al elegir cada foto. La imagen se muestra en el chat con su crédito y se incluye en el PDF, que es el entregable final.
+El identificador de la partida activa se transmite mediante `ContextoPartida` y `ToolRuntime`.
 
-**Estado:** las herramientas están probadas por separado y también en un flujo de punta a punta con un modelo falso (ver sección de tests). Falta comprobar el uso coordinado con un LLM real.
+Esto permite que las herramientas trabajen sobre la partida correcta sin que el modelo tenga que inventar o seleccionar su identificador.
 
-## 5. Estado y memoria
+La aplicación es responsable de validar y aplicar los cambios de partida.
 
-Se utilizan dos mecanismos diferentes:
+### Validaciones
 
-**Estado estructurado (JSON)**
+Las herramientas permiten controlar que:
 
-Cada partida tiene un identificador único (uuid) y almacena:
+- No se escriban más de cinco capítulos.
+- Los capítulos 1 a 4 tengan exactamente tres opciones.
+- El capítulo 5 sea un desenlace sin opciones.
+- No se registren decisiones cuando no corresponda.
+- No se agreguen objetos inválidos al inventario.
+- No se recoja dos veces el mismo objeto.
+- No se utilicen objetos que el jugador todavía no posee.
+- No se modifique una partida finalizada.
 
-- Capítulo actual (cantidad de decisiones tomadas).
-- Capítulos generados, cada uno con su imagen (URL original de Unsplash y datos de atribución; no se guarda ningún archivo de imagen).
-- Decisiones tomadas, con los objetos y pistas que implicó cada una.
-- Inventario.
+Cuando una operación no es válida, la herramienta devuelve un error controlado para evitar alterar el estado.
+
+### Imágenes de los capítulos
+
+La herramienta `buscar_imagen_capitulo` utiliza la API de Unsplash.
+
+La selección fue mejorada para considerar:
+
+- La ubicación actual guardada en el JSON.
+- Los ambientes definidos para la historia.
+- Las descripciones y etiquetas de las fotografías.
+- La iluminación aproximada de la escena.
+- Las imágenes utilizadas previamente.
+
+El sistema realiza búsquedas específicas para ambientes como bibliotecas, recibidores, estudios e invernaderos.
+
+Cuando el capítulo describe una escena oscura, la búsqueda intenta priorizar fotografías compatibles con esa ambientación.
+
+La iluminación se estima utilizando información de Unsplash, por lo que no constituye un análisis visual perfecto.
+
+Si no se encuentra una imagen adecuada o falla la API, la historia puede continuar sin imagen.
+
+Las fotografías se muestran mediante sus URLs originales y conservan la atribución correspondiente.
+
+---
+
+## 5. Estado, memoria y gestión de partidas
+
+El proyecto utiliza dos mecanismos complementarios para conservar información.
+
+### 5.1. Estado estructurado en JSON
+
+Cada partida tiene un identificador único y un archivo JSON propio.
+
+En él se almacenan:
+
+- Identificador de la partida.
+- Capítulos generados.
+- Opciones disponibles.
+- Decisiones tomadas.
+- Inventario del jugador.
 - Pistas descubiertas.
-- Si la partida está finalizada.
+- Imágenes y datos de atribución.
+- Contexto narrativo persistente.
+- Estado de finalización.
+- Nombre personalizado del chat, cuando el usuario lo define.
 
-Las reglas se hacen cumplir en código (`estado_partida.py`) y no solo en el prompt:
+### Contexto narrativo persistente
 
-- La historia tiene 5 capítulos. Los capítulos 1 a 4 llevan tres opciones; el capítulo 5 es el desenlace, no lleva opciones y deja la partida finalizada. Después no se puede escribir nada más.
-- No se puede decidir sin un capítulo pendiente ni escribir un capítulo con otro pendiente.
-- Los objetos solo pueden ser los del catálogo (`CATALOGO_OBJETOS`, alineado con `corpus/pistas_y_objetos.md`), solo se pueden usar si están en el inventario y no se pueden recoger dos veces.
-- El id de la partida se valida (uuid hexadecimal) y el JSON se escribe de forma atómica.
+El estado guarda información como:
 
-La app no crea ninguna partida al abrir la sesión: el chat saluda y queda a la espera. El botón "Nuevo chat" crea un chat con una partida nueva en blanco que espera la instrucción del usuario: el capítulo 1 solo se escribe cuando se lo pide (`/nueva` o un pedido en lenguaje natural). Cada chat tiene su propio `thread_id` y corresponde a una partida; retomar una partida (desde el sidebar, con `/partidas` o por propuesta del agente) siempre abre un chat nuevo. El panel lateral muestra capítulos, inventario y pistas de la partida activa (o "Sin partida activa").
+- `ubicacion_actual`
+- `hechos_establecidos`
+- `misterios_pendientes`
+- `misterios_resueltos`
+- `resumen_ultimo_capitulo`
 
-Todavía falta implementar consecuencias narrativas más complejas, por ejemplo puertas que exijan una llave concreta.
+Estos datos ayudan a evitar contradicciones entre capítulos y permiten continuar la historia aunque se abra una nueva sesión.
 
-**Memoria conversacional**
+### 5.2. Memoria conversacional con SQLite
 
-El agente está configurado con un checkpointer de LangChain sobre SQLite (`partidas/memoria_agente.sqlite3`), con una conexión por proceso.
+El agente utiliza un checkpointer de LangGraph respaldado por SQLite.
 
-Cada chat tiene su propio `thread_id`, distinto del id de la partida, y una partida se juega en un chat. La memoria de la conversación sobrevive a reinicios del servidor, aunque cada sesión de navegador abre un chat nuevo. Al retomar una partida, la continuidad narrativa no depende de la conversación vieja: viene del estado JSON (capítulos, decisiones, inventario, pistas y `contexto_narrativo`), que la app reconstruye en el chat nuevo.
+La memoria se almacena en:
 
-Su funcionamiento con el modelo real todavía está pendiente de pruebas.
+```text
+partidas/memoria_agente.sqlite3
+```
+
+Cada conversación utiliza un `thread_id`.
+
+El identificador del chat y el identificador de la partida son conceptos diferentes.
+
+Cuando se retoma una partida desde la interfaz, su historia se reconstruye desde el JSON. Por eso no depende exclusivamente de la memoria conversacional anterior.
+
+### 5.3. Gestión de chats
+
+La interfaz permite:
+
+- Crear un chat nuevo.
+- Abrir partidas guardadas.
+- Retomar historias inconclusas.
+- Consultar partidas anteriores.
+- Renombrar la partida activa.
+- Eliminar chats con confirmación.
+- Identificar partidas mediante un código corto.
+- Continuar una partida sin modificar sus decisiones pendientes.
+
+El nombre personalizado se guarda en el JSON, por lo que permanece después de cerrar la aplicación.
+
+Si el usuario no asigna un nombre, la interfaz utiliza el título del primer capítulo o **«Partida nueva»** cuando todavía no hay capítulos.
+
+### Eliminación de chats
+
+El botón **Borrar** solicita confirmación antes de eliminar una partida.
+
+Al confirmar, se elimina el archivo JSON correspondiente y la partida desaparece de la lista.
+
+Si se elimina la partida activa, la aplicación vuelve a una conversación sin partida seleccionada.
+
+Los PDF previamente generados no se eliminan automáticamente. Los checkpoints históricos de SQLite tampoco se limpian con esta operación.
+
+---
 
 ## 6. Generación de PDF
 
-Se implementó la generación de documentos mediante ReportLab.
+La aplicación utiliza **ReportLab** para generar un documento con la historia completa.
 
-Los archivos incluyen:
+El PDF incluye:
 
 - Título de la historia.
-- Capítulos guardados.
-- Narración de cada capítulo.
-- Decisiones tomadas por el usuario.
+- Cinco capítulos narrativos.
+- Decisiones tomadas por el jugador.
+- Imágenes asociadas a los capítulos, cuando existen.
+- Créditos de los fotógrafos.
+- Presentación visual con estética de misterio.
 
-El PDF solo se genera cuando la historia terminó (capítulo 5 guardado). Cada capítulo lleva su imagen debajo del título, con el crédito ("Foto: autor / Unsplash", con enlaces). Un PDF no puede hotlinkear, así que **al exportar** cada foto se descarga de su URL original y se incrusta desde memoria, sin guardarla en disco. Si un capítulo no tiene imagen, o no se puede descargar al exportar (por ejemplo, sin conexión), sale sin ella.
+### Funcionamiento
 
-**Estado:** generación probada con una historia completa de cinco capítulos (test automático).
+El agente puede generar el PDF una vez que se guarda el capítulo 5.
 
-Pendiente: incorporar la descarga desde Streamlit. La fuente (DejaVu Sans) viene incluida en `fonts/` junto con su licencia, así que funciona en cualquier sistema operativo.
+La información se recupera del JSON, sin necesidad de reconstruir la historia desde la conversación.
+
+Las imágenes se descargan temporalmente en memoria para incrustarlas en el documento.
+
+No se almacenan copias individuales de las fotografías.
+
+Si una imagen no está disponible, el PDF puede generarse sin ella.
+
+### Ubicación de los archivos
+
+Los documentos se guardan en:
+
+```text
+historias_generadas/
+```
+
+El agente informa la ruta del PDF al finalizar la historia.
+
+### Estado
+
+La generación de PDF está implementada y se probó con historias completas de cinco capítulos.
+
+**Pendiente:** incorporar un botón de descarga directa desde Streamlit. Actualmente se informa la ruta del archivo generado.
+
+---
 
 ## 7. Instalación
 
@@ -180,8 +325,9 @@ Pendiente: incorporar la descarga desde Streamlit. La fuente (DejaVu Sans) viene
 
 - Python 3.11 o 3.12.
 - Git.
-- Acceso a internet para descargar el modelo de embeddings.
-- La API Key del proveedor que elijas (NVIDIA, DeepSeek u OpenRouter) con crédito disponible para ejecutar el agente.
+- Conexión a internet.
+- Clave API de un proveedor de modelos compatible.
+- Clave de Unsplash si se desean imágenes.
 
 ### Clonar el repositorio
 
@@ -190,7 +336,9 @@ git clone https://github.com/facurodriguez06/agente-historias-interactivas.git
 cd agente-historias-interactivas
 ```
 
-### Crear entorno virtual (Linux / Pop!_OS)
+### Crear el entorno virtual
+
+En Linux o Pop!_OS:
 
 ```bash
 python3 -m venv .venv
@@ -204,215 +352,333 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Elegir proveedor de LLM
-
-El proveedor se elige en el `.env`, sin tocar código (ver `.env.example`):
-
-```env
-LLM_PROVIDER=nvidia            # nvidia | deepseek | openrouter (sin definir: deepseek)
-LLM_MODEL=nvidia/nemotron-3-ultra-550b-a55b
-NVIDIA_API_KEY=tu_clave        # o DEEPSEEK_API_KEY si usás deepseek
-```
-
-`LLM_MODEL` es opcional: si queda vacío se usa el default del proveedor (`nvidia/nemotron-3-ultra-550b-a55b`, `deepseek-flash` o `deepseek/deepseek-v4.1-flash-1017`, respectivamente). La clave de NVIDIA se obtiene en [build.nvidia.com](https://build.nvidia.com). Agregar otro proveedor es sumar una función y una entrada en `PROVEEDORES` dentro de `proveedores.py`.
-
-`LLM_TIMEOUT` (opcional, default 120) es el tiempo máximo en segundos de cada llamada al modelo. Si se agota, o el proveedor responde 429/502/503/504, el middleware de `middleware_reintentos.py` reintenta hasta 3 veces esperando 2, 4 y 8 segundos. El mismo middleware repite la llamada hasta dos veces cuando el modelo devuelve una respuesta vacía o con la tool call mal formada (en el último intento se le recuerda el formato), y guarda el mensaje crudo en `logs/` para poder diagnosticarlo.
-
-Ojo: varios modelos del catálogo de NVIDIA responden `410 Gone` (fueron dados de baja en el endpoint hosteado aunque sigan apareciendo en la lista). `nvidia/nemotron-3-ultra-550b-a55b` es el que pasó la prueba de tool calling + razonamiento con `scripts/probar_modelo.py`; por eso es el modelo recomendado en el `.env` (y el default del proveedor `nvidia`).
-
-Para probar el modelo antes de abrir la app:
+Para ejecutar las pruebas automáticas:
 
 ```bash
-python scripts/probar_modelo.py --listar   # modelos de NVIDIA que soportan tools
-python scripts/probar_modelo.py            # pide 21 + 21 usando una tool y muestra tool calls y razonamiento
-python scripts/probar_modelo.py --latencia # repite la prueba 2 veces y mide cada llamada
-python scripts/probar_modelo.py --modelos nvidia/nemotron-3-ultra-550b-a55b,meta/llama-3.3-70b-instruct
-                                           # compara varios modelos en una tabla (pisa LLM_MODEL)
+pip install -r requirements-dev.txt
 ```
 
-### Configurar OpenRouter con DeepSeek V4.1 Flash
+### Configurar las variables de entorno
 
-Instalar las dependencias actualizadas (`pip install -r requirements.txt`) y agregar o reemplazar estas variables en el `.env` local, sin duplicarlas:
+Crear un archivo `.env` en la raíz del proyecto.
+
+El proveedor se selecciona mediante `LLM_PROVIDER`.
+
+Se admiten:
+
+- `nvidia`
+- `deepseek`
+- `openrouter`
+
+El modelo puede especificarse con `LLM_MODEL`.
+
+Si no se indica un proveedor, la configuración utiliza DeepSeek como valor predeterminado.
+
+### Ejemplo: OpenRouter con DeepSeek
+
+Configuración utilizada durante las pruebas manuales del proyecto:
 
 ```env
 LLM_PROVIDER=openrouter
 LLM_MODEL=deepseek/deepseek-v4.1-flash-1017
-OPENROUTER_API_KEY=tu_clave_de_openrouter
+OPENROUTER_API_KEY=tu_clave
 LLM_TIMEOUT=120
 ```
 
-Esta opción usa `ChatOpenRouter` de la integración oficial `langchain-openrouter`. La clave es de **OpenRouter**, no `DEEPSEEK_API_KEY`; no hace falta configurar NVIDIA ni DeepSeek directo. Reiniciar Streamlit después de cambiar el proveedor.
+La clave se obtiene desde la plataforma de OpenRouter.
 
-Para comprobar la conexión y el tool calling, ejecutar `python scripts/probar_modelo.py`. Esta prueba hace llamadas reales y consume créditos; `--listar` solo lista modelos NVIDIA, no OpenRouter. Después se puede abrir `streamlit run app.py` (con el RAG previamente preparado). La configuración y el enlace de tools se prueban automáticamente sin red; eso no acredita una partida completa con este modelo ni garantiza que el proveedor devuelva razonamiento.
-
-### Configurar DeepSeek
-
-Crear un archivo `.env` en la raíz del proyecto:
+### Ejemplo: NVIDIA
 
 ```env
-DEEPSEEK_API_KEY=tu_clave
+LLM_PROVIDER=nvidia
+LLM_MODEL=nvidia/nemotron-3-ultra-550b-a55b
+NVIDIA_API_KEY=tu_clave
+LLM_TIMEOUT=120
 ```
 
-Para las imágenes hace falta una Access Key de Unsplash (gratis):
+### Ejemplo: DeepSeek directo
 
-1. Crear una cuenta en [unsplash.com](https://unsplash.com) y una aplicación en [unsplash.com/oauth/applications](https://unsplash.com/oauth/applications).
-2. Copiar la **Access Key** (no hace falta el Secret) al `.env`:
+```env
+LLM_PROVIDER=deepseek
+LLM_MODEL=deepseek-flash
+DEEPSEEK_API_KEY=tu_clave
+LLM_TIMEOUT=120
+```
+
+El nombre `deepseek-flash` corresponde a la configuración predeterminada implementada en el código. Su disponibilidad debe verificarse con la API correspondiente.
+
+### Configurar Unsplash
+
+Crear una aplicación desde:
+
+https://unsplash.com/oauth/applications
+
+Agregar al `.env`:
 
 ```env
 UNSPLASH_ACCESS_KEY=tu_access_key
 ```
 
-Cada integrante usa su propia key: la cuota del modo demo (unas 50 consultas por hora) es por aplicación. Sin la key el resto de la app funciona; solo faltan las imágenes.
+La Access Key permite buscar imágenes para los capítulos.
 
-Para probar la key sin correr toda la app: `python imagenes.py "foggy old mansion"` (busca una foto, imprime su URL y el autor, y comprueba que la URL responda con una imagen).
+Sin esta clave, la generación de historias puede funcionar, pero no se obtendrán nuevas imágenes de Unsplash.
 
-**Importante:** nunca subir `.env` ni claves reales a GitHub.
+### Seguridad
 
-La API de DeepSeek todavía no fue configurada ni probada en este proyecto.
+**Nunca subir archivos `.env` ni claves API reales al repositorio.**
 
-## 8. Ejecución
+El archivo `.env.example` sirve como referencia para configurar el proyecto.
 
-### Paso 1. Crear la base vectorial
+---
+
+## 8. Ejecución y uso de la aplicación
+
+### Paso 1. Preparar el sistema RAG
+
+Desde la raíz del proyecto:
 
 ```bash
 python ingestar.py
 ```
 
-Este comando lee el corpus, genera los embeddings y almacena los vectores en ChromaDB.
+Este comando procesa el corpus y crea la base vectorial en ChromaDB.
 
-No necesita la API de DeepSeek.
+Debe ejecutarse en la instalación inicial y cuando se modifiquen los documentos del corpus.
 
-### Paso 2. Ejecutar Streamlit
+### Paso 2. Iniciar Streamlit
 
 ```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
-La interfaz requiere configurar previamente la API Key del proveedor elegido (`NVIDIA_API_KEY`, `DEEPSEEK_API_KEY` u `OPENROUTER_API_KEY`).
+Abrir en el navegador la dirección indicada por Streamlit, normalmente:
 
-Al abrir la app no hay ninguna partida activa: el chat saluda y queda a la espera. Una historia arranca únicamente con una instrucción explícita, nunca porque se escriba cualquier cosa.
+```text
+http://localhost:8501
+```
 
-**El chat**
+### Comandos del chat
 
-- **`/nueva`**: instrucción explícita de juego. Si el chat actual tiene una partida sin capítulos (la que dejó el botón "Nuevo chat"), escribe el capítulo 1 en ese mismo turno; si la partida ya estaba en marcha (o terminada), abre un chat nuevo con una partida nueva y arranca ahí.
-- **`/partidas`**: lista las últimas 3 partidas abiertas ("abierta" = una partida que no llegó a su desenlace), con su id corto, capítulos y último capítulo. Respondiendo con el número (o describiéndola) se abre esa partida en un chat nuevo, reconstruyendo la historia desde su JSON; también se puede pedir en lenguaje natural.
-- **`/ayuda`**: muestra los comandos y qué puede hacer el chat.
-- **Lista de chats** (barra lateral, estilo ChatGPT): muestra todos los chats-partida guardados, abiertos y terminados, más recientes primero, con el título del último capítulo y "N de 5 capítulos" (más "· terminada" si corresponde). El chat activo va resaltado, y tocar una entrada abre esa partida en un chat nuevo.
-- **Botón "Nuevo chat"** (único botón, arriba de la lista): crea un chat con una partida nueva en blanco que espera la instrucción; la historia no se escribe sola, arranca cuando se lo pedís (por ejemplo, "empezá").
-- Preguntas sobre partidas anteriores (abiertas o terminadas): el asistente responde sin avanzar ni cerrar la partida activa y, si un capítulo estaba esperando decisión, te lo recuerda al final para seguir jugando.
+**`/nueva`**
 
-**Advertencia:** el flujo completo todavía no se probó con un LLM real. La aplicación no está validada como experiencia completa de juego.
+Inicia una historia nueva.
 
-### Ayuda memoria: levantar y cerrar el servidor local
+Si la partida activa está vacía, comienza el capítulo 1 dentro de ella.
 
-**Levantarlo:** desde la raíz del repositorio, con el `.env` configurado y las dependencias instaladas:
+Si la partida actual ya tiene capítulos, crea una nueva partida y comienza su historia.
+
+También se reconocen expresiones de inicio como **«empezá»**, **«arrancá»** o **«juguemos»**, que permiten comenzar directamente cuando no hay una historia iniciada.
+
+**`/partidas`**
+
+Muestra hasta tres partidas guardadas recientes, excluyendo la partida actual.
+
+La interfaz presenta botones para seleccionar una partida y una cuarta opción fija:
+
+**4. Continuar con partida actual**
+
+Esta cuarta opción cierra el menú y vuelve a mostrar las decisiones pendientes, sin registrar una elección ni generar un capítulo nuevo.
+
+El menú también permite seleccionar opciones escribiendo su número.
+
+Las partidas terminadas pueden abrirse para releer su historia, pero no seguir jugando.
+
+**`/ayuda`**
+
+Muestra información sobre los comandos disponibles y las funciones del chat.
+
+### Barra lateral
+
+La barra lateral contiene:
+
+- Identificador de la partida actual.
+- Opción para renombrar el chat activo.
+- Botón **Nuevo chat**.
+- Lista de partidas guardadas.
+- Botón **Borrar** junto a cada partida.
+- Información del proveedor y modelo configurados.
+- Estado, inventario y pistas de la partida activa.
+
+El nombre de cada chat puede personalizarse desde la opción **Renombrar chat actual**.
+
+### Decisiones de la historia
+
+Los capítulos 1 a 4 presentan tres botones de decisión.
+
+El jugador selecciona una opción y el agente continúa la narración considerando el estado y la información recuperada mediante RAG.
+
+El capítulo 5 es el desenlace y no presenta nuevas decisiones.
+
+### Consultas durante la partida
+
+El usuario también puede preguntar al agente sobre:
+
+- Decisiones anteriores.
+- Objetos encontrados.
+- Pistas descubiertas.
+- Misterios pendientes.
+- Información de otras partidas.
+
+Estas consultas no deberían avanzar la historia ni registrar decisiones por sí mismas.
+
+### Iniciar Streamlit con configuración local
+
+En Linux o Pop!_OS también puede utilizarse:
 
 ```bash
 source .venv/bin/activate
+
 HF_HOME="$PWD/.venv/.cache/huggingface" python -m streamlit run app.py \
   --server.address 127.0.0.1 \
   --server.port 8501 \
   --server.fileWatcherType none
 ```
 
-Abrir **http://127.0.0.1:8501** y dejar esa terminal abierta. `python -m streamlit` usa la instalación del entorno virtual. `HF_HOME` reutiliza la caché de embeddings preparada en este entorno local; mantener ese mismo valor para no descargarlos de nuevo.
+Esta configuración permite reutilizar la caché local de Hugging Face y desactiva la vigilancia de archivos para evitar posibles problemas con `inotify`.
 
-`--server.fileWatcherType none` desactiva la vigilancia de archivos para evitar mensajes como `Inotify queue overflowed`. El chat sigue funcionando; si modificás código Python, reiniciá el servidor para cargar los cambios.
+Cuando se utiliza `--server.fileWatcherType none`, es necesario reiniciar Streamlit después de modificar el código.
 
-**Cerrar el servidor:** presionar **Ctrl+C en la terminal donde se está ejecutando**. Cerrar solamente la pestaña del navegador **no** apaga el servidor. Cuando vuelva el prompt de la terminal, opcionalmente ejecutar `deactivate` para salir del entorno virtual; `deactivate` por sí solo no detiene Streamlit.
-
-**Volver a levantarlo:** repetir el bloque anterior. No hace falta reinstalar dependencias ni ejecutar la ingesta cada vez.
-
-Si falta `chroma_db/` o cambió el corpus, preparar el RAG antes de iniciar la app:
-
-```bash
-source .venv/bin/activate
-HF_HOME="$PWD/.venv/.cache/huggingface" python ingestar.py
-```
-
-La ingesta **reconstruye** el índice existente. Al apagar el servidor se conservan los JSON de `partidas/`, los PDF y el RAG, y también la memoria conversacional (SQLite en `partidas/`). Al volver a abrir la app, cada sesión de navegador abre un chat nuevo, pero cualquier partida se puede retomar desde su JSON desde la lista de chats del sidebar o con `/partidas`. Conversar con el agente consume créditos del proveedor.
-
-### Tests
-
-Las pruebas no usan LLM ni red. Incluyen un flujo de punta a punta con un modelo falso que emite llamadas a tools.
-
-```bash
-pip install -r requirements-dev.txt
-pytest
-```
-
-## 9. Estado actual del desarrollo
-
-### Implementado y probado
-
-- [x] Creación del repositorio GitHub.
-- [x] Corpus narrativo de tres documentos.
-- [x] Ingesta, chunking y embeddings.
-- [x] Base vectorial ChromaDB.
-- [x] Recuperación semántica mediante RAG.
-- [x] Creación y consulta de partidas JSON.
-- [x] Registro de decisiones.
-- [x] Guardado de capítulos.
-- [x] Generación de PDF.
-- [x] Pruebas individuales de las diez tools.
-- [x] Estado JSON integrado con la sesión de Streamlit (el chat tiene su propio `thread_id`; la partida activa viaja en `ContextoPartida` y puede no haber ninguna).
-- [x] Chat conversacional: preguntas sobre partidas anteriores, arrancar por instrucción y retomar siempre en un chat nuevo (un chat por partida).
-- [x] Comandos deterministas `/nueva`, `/partidas` y `/ayuda` resueltos por la app, sin gastar LLM.
-- [x] Lista de chats estilo ChatGPT (abiertas y terminadas, más recientes primero, activa resaltada) y botón único "Nuevo chat" que crea una partida a la espera de la instrucción.
-- [x] Listado de partidas abiertas (últimas 3, las que no llegaron a un final) y retomado determinista por número, sidebar o propuesta del agente.
-- [x] Cambio de partida activa: el agente propone con tools, la app valida y aplica; el id de partida nunca lo elige el LLM.
-- [x] Id de partida fijado por la aplicación, no por el LLM.
-- [x] Finalización garantizada en el capítulo 5 (desenlace sin opciones).
-- [x] Inventario y pistas con validación (catálogo de objetos).
-- [x] PDF solo al finalizar la historia.
-- [x] Tests automáticos sin LLM, incluido un flujo con modelo falso.
-- [x] Tool con servicio externo: imágenes de Unsplash, una por capítulo, mostradas en la UI e incluidas en el PDF (probada con la API real y con la red simulada en los tests).
-- [x] Proveedores conmutables (NVIDIA / DeepSeek) desde el `.env`, con el proveedor y el modelo activos a la vista en la barra lateral.
-- [x] Middleware propio de reintentos: 429, timeouts y 502/503/504 con espera exponencial (2, 4 y 8 segundos), y reintento de respuestas vacías o mal formadas.
-- [x] Streaming del turno en Streamlit: el razonamiento, cada llamada a tool y su resultado se dibujan en vivo y quedan en el historial.
-- [x] Razonamiento del modelo visible en la interfaz y conservado en el historial de la sesión.
-- [x] Diagnóstico de respuestas vacías: el mensaje crudo del modelo se guarda en `logs/`.
-- [x] Red de seguridad en la interfaz: si el turno termina sin texto, se muestra el capítulo guardado en el JSON.
-- [x] Fuente del PDF incluida en el repo (`fonts/DejaVuSans.ttf`), así el PDF sale igual en cualquier sistema operativo.
-- [x] Medición de latencia y comparación de modelos en `scripts/probar_modelo.py` (`--latencia`, `--modelos`).
-
-### Implementado, pendiente de pruebas con un LLM real
-
-- [ ] Una partida completa de punta a punta con el modelo real (el agente está armado con `create_agent` y probado con un modelo falso).
-- [ ] Uso coordinado de las diez herramientas siguiendo el prompt.
-- [ ] El flujo de chat con modelo real: arrancar por instrucción, meta-consultas y retomado propuesto por el agente (los comandos y el retomado determinista ya están probados sin LLM).
-- [ ] Memoria conversacional mediante checkpointer.
-- [ ] Que el modelo respete el catálogo de objetos.
-- [ ] Que el modelo pida la imagen de cada capítulo con consultas útiles.
-
-### Pendiente de desarrollar
-
-- [ ] Confirmar el nombre del modelo de DeepSeek (`deepseek-flash` no está verificado); el proveedor probado hasta ahora es NVIDIA.
-- [ ] Más tools con servicio externo, si la cátedra lo requiere (por ejemplo, clima).
-- [ ] Confirmar con las pautas de Unsplash el uso de las fotos dentro del PDF (se descargan solo al exportar, desde su URL original, y no se guardan).
-- [ ] Opciones como botones y descarga del PDF en la interfaz.
-- [ ] Reglas de consecuencias más complejas (por ejemplo, puertas que exigen una llave).
-- [ ] Ampliar el corpus y evitar que el RAG devuelva pistas todavía inaccesibles.
-- [ ] Retomar el mismo chat tras cerrar el navegador (hoy cada sesión de navegador abre un chat nuevo; las partidas se retoman desde su JSON).
-- [ ] Probar la instalación desde cero.
-- [ ] Completar documentación y presentación final.
-
-## 10. Consideraciones técnicas
-
-- El protagonista siempre es el usuario; no se le asigna identidad ficticia.
-- El RAG almacena conocimiento del universo, no las decisiones de cada partida.
-- El JSON conserva los acontecimientos específicos de cada historia.
-- Los embeddings se generan localmente y no consumen tokens de DeepSeek.
-- Las herramientas se implementaron de forma modular para permitir pruebas independientes.
-- El modelo no puede modificar el estado de una partida sin pasar por las validaciones de `estado_partida.py`, y no elige el id de la partida.
-- Las imágenes vienen de la API de Unsplash (fotos de stock de ambiente), no se generan con IA: es más rápido y confiable, y la atribución al fotógrafo queda en el PDF y en la UI.
-
-## 11. Próximos pasos
-
-La prioridad es validar el agente ya cableado con un modelo real: una partida completa de cinco capítulos en la que el modelo use las seis herramientas en el orden que pide el prompt.
-
-Después se completará la interfaz (opciones como botones, descarga del PDF), se ajustará el corpus y, finalmente, las pruebas completas, la documentación y la preparación de la exposición.
+Para detener el servidor, presionar **Ctrl+C** en la terminal.
 
 ---
 
-**Estado general:** prototipo técnico en desarrollo. El flujo de la partida (estado, cierre en cinco capítulos, inventario, imágenes, PDF), la interfaz con streaming y razonamiento, y el middleware de reintentos están implementados y probados con tests automáticos y un modelo falso. Todavía no existe una demo integral validada con un LLM real.
+## 9. Estado actual del desarrollo
+
+### Implementado
+
+- [x] Creación del repositorio y organización del proyecto.
+- [x] Corpus narrativo de tres documentos.
+- [x] Ingesta y generación de embeddings.
+- [x] Almacenamiento vectorial en ChromaDB.
+- [x] Recuperación de contexto mediante RAG.
+- [x] Agente construido con LangChain `create_agent`.
+- [x] Integración de diez herramientas.
+- [x] Selección de proveedor mediante variables de entorno.
+- [x] Estado persistente de partidas en JSON.
+- [x] Memoria conversacional con SQLite.
+- [x] Generación de historias de cinco capítulos.
+- [x] Tres decisiones por capítulo, excepto el desenlace.
+- [x] Validación del inventario y las pistas.
+- [x] Contexto narrativo persistente.
+- [x] Generación de imágenes mediante Unsplash.
+- [x] Selección de imágenes considerando ubicación y ambientación.
+- [x] Generación de historias en PDF.
+- [x] Interfaz Streamlit.
+- [x] Visualización de llamadas a herramientas y resultados.
+- [x] Visualización del razonamiento cuando el proveedor lo entrega.
+- [x] Comandos `/nueva`, `/partidas` y `/ayuda`.
+- [x] Botones para seleccionar decisiones.
+- [x] Apertura de partidas anteriores.
+- [x] Menú para continuar con la partida actual.
+- [x] Inicio directo del capítulo 1 con instrucciones reconocidas.
+- [x] Lista de chats en la barra lateral.
+- [x] Renombrado de chats con persistencia en JSON.
+- [x] Eliminación de chats con confirmación.
+- [x] Middleware de reintentos.
+- [x] Pruebas automáticas con Pytest.
+
+### Pruebas realizadas
+
+Se realizaron pruebas automáticas de las herramientas y del flujo de la aplicación utilizando datos y modelos simulados.
+
+Durante el desarrollo se obtuvo una ejecución de **222 pruebas aprobadas**. Ese resultado corresponde a una versión anterior a los últimos cambios de la interfaz, por lo que debe verificarse nuevamente antes de la entrega.
+
+También se realizaron pruebas manuales utilizando un modelo real de DeepSeek mediante OpenRouter.
+
+Estas pruebas incluyeron:
+
+- Inicio de nuevas historias.
+- Generación de capítulos.
+- Registro de decisiones.
+- Recuperación de información mediante RAG.
+- Consulta de partidas anteriores sin avanzar la actual.
+- Generación de imágenes.
+- Finalización de una historia de cinco capítulos.
+- Generación del PDF correspondiente.
+
+Las pruebas manuales permitieron comprobar el funcionamiento general, aunque no garantizan que todas las posibles decisiones produzcan siempre resultados narrativamente correctos.
+
+### Pendiente de mejorar o verificar
+
+- [ ] Incorporar la descarga directa del PDF desde Streamlit.
+- [ ] Mejorar la relevancia visual de algunas imágenes.
+- [ ] Ampliar las reglas narrativas y consecuencias de las decisiones.
+- [ ] Extender el corpus con nuevas ubicaciones y situaciones.
+- [ ] Evitar que el RAG exponga información que el jugador todavía no debería conocer.
+- [ ] Mejorar la identificación visual de las partidas en la barra lateral.
+- [ ] Permitir recuperar exactamente el historial conversacional después de cerrar el navegador.
+- [ ] Revisar la limpieza de checkpoints antiguos al eliminar partidas.
+- [ ] Ejecutar nuevamente todos los tests después de los últimos cambios.
+- [ ] Probar la instalación desde cero.
+- [ ] Completar la documentación y la presentación final.
+
+---
+
+## 10. Consideraciones técnicas
+
+### Consistencia narrativa
+
+El agente debe respetar las decisiones y descubrimientos realizados por el jugador.
+
+El corpus RAG define el mundo narrativo, mientras que el JSON determina qué sucedió efectivamente en cada partida.
+
+El estado persistente permite conservar hechos establecidos y misterios pendientes entre capítulos.
+
+### Separación de responsabilidades
+
+La arquitectura distingue:
+
+- **LLM:** genera respuestas y propone acciones.
+- **RAG:** proporciona información del universo narrativo.
+- **Tools:** realizan operaciones concretas.
+- **JSON:** conserva el estado de la partida.
+- **SQLite:** mantiene checkpoints de conversación.
+- **Streamlit:** controla la interacción del usuario.
+- **ReportLab:** genera el PDF final.
+
+Esta separación facilita la validación, las pruebas y el mantenimiento.
+
+### Control de errores
+
+El proyecto incluye un middleware que permite reintentar determinadas llamadas fallidas al proveedor.
+
+También contempla errores de herramientas, búsquedas sin resultados y fallas de servicios externos.
+
+Cuando Unsplash no devuelve una fotografía adecuada, la narración puede continuar sin imagen.
+
+### Seguridad y persistencia
+
+Las claves API se leen desde variables de entorno.
+
+Los identificadores de partida se validan antes de acceder a sus archivos.
+
+Las operaciones de escritura del estado se realizan de forma atómica para reducir el riesgo de archivos incompletos.
+
+El borrado de partidas desde la interfaz requiere confirmación.
+
+### Limitaciones actuales
+
+El sistema todavía puede generar inconsistencias narrativas, repetir ideas o seleccionar fotografías que no coincidan completamente con la escena.
+
+La calidad de las respuestas depende del modelo utilizado, del contexto recuperado y de las instrucciones del agente.
+
+Las pruebas automáticas verifican reglas y comportamientos concretos, pero no reemplazan la evaluación manual de la calidad narrativa.
+
+---
+
+## 11. Próximos pasos
+
+Las prioridades para continuar el desarrollo son:
+
+1. Verificar nuevamente la aplicación completa después de los últimos cambios de interfaz.
+2. Incorporar un botón para descargar el PDF directamente desde Streamlit.
+3. Mejorar la presentación y administración de los chats.
+4. Revisar la coherencia narrativa y las consecuencias de las decisiones.
+5. Completar las pruebas finales con un modelo real.
+6. Preparar la documentación y presentación del trabajo integrador.
+
+---
+
+**Estado general:** prototipo funcional en desarrollo. El proyecto integra un agente con herramientas, RAG, memoria persistente, generación de historias, gestión de partidas, imágenes de Unsplash y exportación a PDF.
+
+Se realizaron pruebas automáticas y pruebas manuales de historias completas con un modelo real. Quedan mejoras de interfaz, validaciones adicionales y verificaciones finales antes de considerar terminada la entrega.

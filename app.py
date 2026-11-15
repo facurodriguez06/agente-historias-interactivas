@@ -1,6 +1,7 @@
 """Interfaz Streamlit: historias, memoria persistente y herramientas del agente."""
 
 import uuid
+from pathlib import Path
 
 import streamlit as st
 from langchain_core.messages import AIMessage
@@ -932,6 +933,20 @@ if estado_actual and st.session_state.listado_pendiente is None:
                 "No repitas capítulos anteriores. "
                 "Si es el capítulo 5, generá también la imagen y el PDF."
             )
+
+
+# Descargar el PDF cuando la historia haya terminado.
+if estado_actual and estado_actual["finalizada"]:
+    ruta_pdf = Path("historias_generadas") / f"{st.session_state.id_partida}.pdf"
+
+    if ruta_pdf.exists():
+        st.download_button(
+            "Descargar historia en PDF",
+            data=ruta_pdf.read_bytes(),
+            file_name=ruta_pdf.name,
+            mime="application/pdf",
+            use_container_width=True,
+        )
 
 
 mensaje_escrito = st.chat_input("Escribí tu mensaje o un comando (/ayuda)...")
