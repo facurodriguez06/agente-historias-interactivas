@@ -28,7 +28,9 @@ class ContextoPartida:
     id_partida: str = ""
 
 
-SIN_PARTIDA_ACTIVA = "No active game session. Ask the user to start a new game or resume an open one."
+SIN_PARTIDA_ACTIVA = (
+    "No active game session. Ask the user to start a new game or resume an open one."
+)
 
 
 @lru_cache(maxsize=1)
@@ -229,7 +231,6 @@ def guardar_capitulo(
         return {"error": str(e)}
 
 
-
 @tool
 def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
     """Generate a PDF containing the completed story and decisions.
@@ -246,30 +247,52 @@ def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
 
 @tool
 def buscar_imagen_capitulo(
-    consulta: str, runtime: ToolRuntime[ContextoPartida]
+    consulta: str,
+    runtime: ToolRuntime[ContextoPartida],
 ) -> dict:
-    """Find an atmospheric Unsplash image for the latest chapter.
+    """Find a relevant image using the latest chapter location.
 
-    Call once immediately after guardar_capitulo.
-    - consulta: 3 to 5 English words describing the scene or atmosphere.
-    - Examples: "foggy old mansion library", "rainy greenhouse glass".
-    - Do not include people's names.
-    Retry once with a more general query if the search fails; then continue
-    without an image. The result is attached to the chapter and its PDF.
+    Uses the location stored in the game's JSON.
+    The consulta argument remains for compatibility.
     """
+
     if not runtime.context.id_partida:
         return {"error": SIN_PARTIDA_ACTIVA}
+
     try:
         id_partida = runtime.context.id_partida
+
         numero, ya_usadas = estado_partida.capitulo_para_imagen(id_partida)
-        foto = imagenes.obtener_imagen(consulta, excluir_ids=ya_usadas)
+
+        # Recuperamos el estado persistente.
+        estado = estado_partida.consultar_estado(id_partida)
+
+        # Obtenemos el último capítulo guardado.
+        capitulo = estado["capitulos"][-1]
+
+        # Leemos la ubicación del capítulo.
+        contexto = capitulo.get("contexto_narrativo") or estado["contexto_narrativo"]
+
+        ubicacion = contexto.get("ubicacion_actual", "")
+
+        # Buscamos la imagen usando esa ubicación.
+        foto = imagenes.obtener_imagen(
+            consulta,
+            excluir_ids=ya_usadas,
+            ubicacion=ubicacion,
+            escena=capitulo.get("texto", ""),
+        )
+
         estado_partida.adjuntar_imagen(id_partida, foto)
+
         return {
             "ok": True,
             "capitulo": numero,
+            "ubicacion": ubicacion,
             "autor": foto["autor"],
             "descripcion": foto["descripcion"],
         }
+
     except (ValueError, OSError) as e:
         return {"error": str(e)}
 

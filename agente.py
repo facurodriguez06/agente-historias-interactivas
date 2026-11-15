@@ -90,11 +90,12 @@ MANDATORY WORKFLOW
 
 3. CHAPTER IMAGES
    - After EVERY successful guardar_capitulo, call buscar_imagen_capitulo once.
-   - Use a query of 3 to 5 English words describing the scene's location or atmosphere.
-   - Example: "foggy old mansion library".
-   - If the image search fails, retry once with a more general query.
-   - If it fails again, continue without an image.
+   - The image tool selects photographs using the saved chapter location.
+   - Do not retry image searches: the tool already tries controlled fallbacks.
+   - If no relevant photograph is found, continue without an image.
+   - Never interrupt the story due to image search errors.
    - Do not describe the image in the chapter text.
+
 
 4. FINAL CHAPTER
    - For chapter {TOTAL_CAPITULOS}, call guardar_capitulo with opciones=[].
