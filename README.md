@@ -8,7 +8,7 @@ Agente de inteligencia artificial desarrollado con **LangChain**, que genera his
 
 El agente narra en segunda persona y permite tomar decisiones que modifican el desarrollo de la aventura.
 
-El chat es una conversación que puede atravesar varias partidas: se pueden hacer preguntas sobre partidas anteriores, empezar una historia nueva con una instrucción explícita y retomar una partida abierta en el mismo chat.
+Cada chat es una partida (modelo ChatGPT: un chat, una partida): se pueden hacer preguntas sobre partidas anteriores sin salir de la partida en curso, empezar una historia nueva con una instrucción explícita y retomar cualquier partida guardada, que siempre se abre en un chat nuevo.
 
 El proyecto combina:
 
@@ -62,10 +62,10 @@ Carpetas que se generan al ejecutar (están en `.gitignore` y no se versionan): 
 - `agente.py`: arma el agente con el modelo de `proveedores.py`, las herramientas disponibles, el prompt y el checkpointer.
 - `proveedores.py`: fábrica de modelos; elige NVIDIA, DeepSeek u OpenRouter según `LLM_PROVIDER` del `.env` y resuelve `LLM_MODEL` y `LLM_TIMEOUT`.
 - `scripts/probar_modelo.py`: prueba manual del modelo configurado (tool calling y razonamiento), fuera de la app; incluye medición de latencia y comparación entre modelos.
-- `app.py`: implementa la interfaz web mediante Streamlit: chat, enrutamiento de los comandos deterministas, streaming del turno, razonamiento del modelo, imágenes y panel de estado. Es la autoridad del cambio de partida activa: las tools del agente proponen, la app valida y aplica.
+- `app.py`: implementa la interfaz web mediante Streamlit: chat, barra lateral con la lista de chats-partida estilo ChatGPT, botón único "Nuevo chat", enrutamiento de los comandos deterministas, streaming del turno, razonamiento del modelo, imágenes y panel de estado. Es la autoridad del cambio de partida activa: las tools del agente proponen, la app valida y aplica.
 - `herramientas.py`: contiene las diez tools disponibles para el agente (juego, meta-consulta y control de sesión) y `ContextoPartida`, que lleva el id de la partida activa a las tools (vacío cuando no hay partida).
 - `estado_partida.py`: administra los estados de partida mediante archivos JSON, hace cumplir las reglas de la historia (capítulos, decisiones, inventario, cierre) y lista las partidas abiertas (las que no llegaron a un final).
-- `comandos_chat.py`: comandos deterministas del chat (`/nueva`, `/retomar`, `/partidas`, `/ayuda`), formateo del listado de partidas abiertas, elección numérica, ayuda y saludo. Vive fuera de `app.py` para poder testearse sin Streamlit.
+- `comandos_chat.py`: comandos deterministas del chat (`/nueva`, `/partidas`, `/ayuda`), formateo del listado de partidas abiertas, elección numérica, ayuda y saludo. Vive fuera de `app.py` para poder testearse sin Streamlit.
 - `middleware_reintentos.py`: middleware propio (API base de LangChain, `wrap_model_call`) que reintenta 429, timeouts y 502/503/504 con espera exponencial, y repite la llamada cuando el modelo devuelve una respuesta vacía o con la tool call mal formada.
 - `pasos_agente.py`: traduce los mensajes del agente a pasos para la interfaz (razonamiento, llamada a tool, resultado), arma el capítulo de respaldo cuando el turno termina sin texto y detecta los cambios de sesión que propone el agente (`iniciar_nueva_partida` / `retomar_partida`) para que la app los aplique; vive fuera de `app.py` para poder testearse sin Streamlit.
 - `diagnostico.py`: detecta las respuestas vacías del modelo y guarda el mensaje crudo en `logs/` para inspeccionarlo.
@@ -145,7 +145,7 @@ Las reglas se hacen cumplir en código (`estado_partida.py`) y no solo en el pro
 - Los objetos solo pueden ser los del catálogo (`CATALOGO_OBJETOS`, alineado con `corpus/pistas_y_objetos.md`), solo se pueden usar si están en el inventario y no se pueden recoger dos veces.
 - El id de la partida se valida (uuid hexadecimal) y el JSON se escribe de forma atómica.
 
-La app no crea ninguna partida al abrir la sesión: la partida activa aparece solo cuando el usuario la pide (`/nueva`, lenguaje natural o retomando una abierta) y viaja en el contexto de cada ejecución. El chat, en cambio, tiene su propio `thread_id`, independiente de la partida: una misma conversación puede atravesar varias partidas. El panel lateral muestra capítulos, inventario y pistas de la partida activa (o "Sin partida activa").
+La app no crea ninguna partida al abrir la sesión: el chat saluda y queda a la espera. El botón "Nuevo chat" crea un chat con una partida nueva en blanco que espera la instrucción del usuario: el capítulo 1 solo se escribe cuando se lo pide (`/nueva` o un pedido en lenguaje natural). Cada chat tiene su propio `thread_id` y corresponde a una partida; retomar una partida (desde el sidebar, con `/partidas` o por propuesta del agente) siempre abre un chat nuevo. El panel lateral muestra capítulos, inventario y pistas de la partida activa (o "Sin partida activa").
 
 Todavía falta implementar consecuencias narrativas más complejas, por ejemplo puertas que exijan una llave concreta.
 
@@ -153,7 +153,7 @@ Todavía falta implementar consecuencias narrativas más complejas, por ejemplo 
 
 El agente está configurado con un checkpointer de LangChain sobre SQLite (`partidas/memoria_agente.sqlite3`), con una conexión por proceso.
 
-Cada chat tiene su propio `thread_id`, distinto del id de la partida. La memoria de la conversación sobrevive a reinicios del servidor, aunque cada sesión de navegador abre un chat nuevo. Al retomar una partida, la continuidad narrativa no depende de la conversación vieja: viene del estado JSON (capítulos, decisiones, inventario, pistas y `contexto_narrativo`), que la app reconstruye en el chat.
+Cada chat tiene su propio `thread_id`, distinto del id de la partida, y una partida se juega en un chat. La memoria de la conversación sobrevive a reinicios del servidor, aunque cada sesión de navegador abre un chat nuevo. Al retomar una partida, la continuidad narrativa no depende de la conversación vieja: viene del estado JSON (capítulos, decisiones, inventario, pistas y `contexto_narrativo`), que la app reconstruye en el chat nuevo.
 
 Su funcionamiento con el modelo real todavía está pendiente de pruebas.
 
@@ -294,10 +294,11 @@ Al abrir la app no hay ninguna partida activa: el chat saluda y queda a la esper
 
 **El chat**
 
-- **`/nueva`**: crea una partida nueva, la activa y escribe el capítulo 1 en ese mismo turno.
-- **`/retomar`** y **`/partidas`**: listan las últimas 3 partidas abiertas ("abierta" = una partida que no llegó a su desenlace), con su id corto, capítulos y último capítulo. Respondiendo con el número se retoma esa partida en el mismo chat, reconstruyendo la historia desde su JSON; también se puede pedir en lenguaje natural.
+- **`/nueva`**: instrucción explícita de juego. Si el chat actual tiene una partida sin capítulos (la que dejó el botón "Nuevo chat"), escribe el capítulo 1 en ese mismo turno; si la partida ya estaba en marcha (o terminada), abre un chat nuevo con una partida nueva y arranca ahí.
+- **`/partidas`**: lista las últimas 3 partidas abiertas ("abierta" = una partida que no llegó a su desenlace), con su id corto, capítulos y último capítulo. Respondiendo con el número (o describiéndola) se abre esa partida en un chat nuevo, reconstruyendo la historia desde su JSON; también se puede pedir en lenguaje natural.
 - **`/ayuda`**: muestra los comandos y qué puede hacer el chat.
-- **Botón "Nuevo chat"** (barra lateral): reinicia la conversación al estado inicial (saludo y chat nuevo) sin tocar las partidas guardadas; las que estaban abiertas se retoman con **`/retomar`**.
+- **Lista de chats** (barra lateral, estilo ChatGPT): muestra todos los chats-partida guardados, abiertos y terminados, más recientes primero, con el título del último capítulo y "N de 5 capítulos" (más "· terminada" si corresponde). El chat activo va resaltado, y tocar una entrada abre esa partida en un chat nuevo.
+- **Botón "Nuevo chat"** (único botón, arriba de la lista): crea un chat con una partida nueva en blanco que espera la instrucción; la historia no se escribe sola, arranca cuando se lo pedís (por ejemplo, "empezá").
 - Preguntas sobre partidas anteriores (abiertas o terminadas): el asistente responde sin avanzar ni cerrar la partida activa y, si un capítulo estaba esperando decisión, te lo recuerda al final para seguir jugando.
 
 **Advertencia:** el flujo completo todavía no se probó con un LLM real. La aplicación no está validada como experiencia completa de juego.
@@ -329,7 +330,7 @@ source .venv/bin/activate
 HF_HOME="$PWD/.venv/.cache/huggingface" python ingestar.py
 ```
 
-La ingesta **reconstruye** el índice existente. Al apagar el servidor se conservan los JSON de `partidas/`, los PDF y el RAG, y también la memoria conversacional (SQLite en `partidas/`). Al volver a abrir la app, cada sesión de navegador abre un chat nuevo, pero cualquier partida se puede retomar desde su JSON con `/retomar`. Conversar con el agente consume créditos del proveedor.
+La ingesta **reconstruye** el índice existente. Al apagar el servidor se conservan los JSON de `partidas/`, los PDF y el RAG, y también la memoria conversacional (SQLite en `partidas/`). Al volver a abrir la app, cada sesión de navegador abre un chat nuevo, pero cualquier partida se puede retomar desde su JSON desde la lista de chats del sidebar o con `/partidas`. Conversar con el agente consume créditos del proveedor.
 
 ### Tests
 
@@ -355,8 +356,9 @@ pytest
 - [x] Generación de PDF.
 - [x] Pruebas individuales de las diez tools.
 - [x] Estado JSON integrado con la sesión de Streamlit (el chat tiene su propio `thread_id`; la partida activa viaja en `ContextoPartida` y puede no haber ninguna).
-- [x] Chat conversacional: preguntas sobre partidas anteriores, arrancar por instrucción y retomar en el mismo chat.
-- [x] Comandos deterministas `/nueva`, `/retomar`, `/partidas` y `/ayuda` resueltos por la app, sin gastar LLM.
+- [x] Chat conversacional: preguntas sobre partidas anteriores, arrancar por instrucción y retomar siempre en un chat nuevo (un chat por partida).
+- [x] Comandos deterministas `/nueva`, `/partidas` y `/ayuda` resueltos por la app, sin gastar LLM.
+- [x] Lista de chats estilo ChatGPT (abiertas y terminadas, más recientes primero, activa resaltada) y botón único "Nuevo chat" que crea una partida a la espera de la instrucción.
 - [x] Listado de partidas abiertas (últimas 3, las que no llegaron a un final) y retomado determinista por número, sidebar o propuesta del agente.
 - [x] Cambio de partida activa: el agente propone con tools, la app valida y aplica; el id de partida nunca lo elige el LLM.
 - [x] Id de partida fijado por la aplicación, no por el LLM.

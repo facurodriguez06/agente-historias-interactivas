@@ -10,6 +10,7 @@ import estado_partida
 from agente import crear_agente
 from estado_partida import (
     CARPETA_PARTIDAS,
+    TOTAL_CAPITULOS,
     consultar_estado,
     crear_partida,
     listar_partidas_abiertas,
@@ -123,22 +124,35 @@ def estado_retomable(id_partida):
     return estado
 
 
-def retomar_partida_determinista(id_partida):
-    """Cambia la partida activa a `id_partida` y reconstruye la historia en el chat.
+def abrir_chat_de_partida(id_partida):
+    """Abre `id_partida` en un chat nuevo: un chat por partida (S3).
 
-    Devuelve True si el cambio se aplicó. Si la partida no existe o ya terminó,
-    muestra el error y no toca nada: la partida activa queda como estaba.
+    Cambia el hilo del chat (id_chat nuevo), deja la partida como activa y
+    reconstruye la historia desde el JSON; el chat anterior queda guardado y se
+    puede volver a abrir desde el sidebar o con /partidas. Sirve para partidas
+    abiertas y también para terminadas (se abren para releerlas). Devuelve True
+    si el cambio se aplicó; si la partida no existe, muestra el error y no toca
+    nada: la partida activa queda como estaba.
     """
-    estado = estado_retomable(id_partida)
+    try:
+        estado = consultar_estado(id_partida)
+    except (ValueError, OSError):
+        estado = None
     if estado is None:
-        st.error(f"No se pudo retomar la partida `{id_partida[:8]}`.")
+        st.error(f"No se pudo abrir la partida `{id_partida[:8]}`.")
         return False
 
+    st.session_state.id_chat = uuid.uuid4().hex
     st.session_state.id_partida = id_partida
     st.session_state.listado_pendiente = None
-    st.session_state.historial_visible.append(
-        ("assistant", f"Retomaste la partida `{id_partida[:8]}` — así venía la historia:", [], [])
-    )
+    st.session_state.historial_visible = [
+        (
+            "assistant",
+            f"Abriste la partida `{id_partida[:8]}` en un chat nuevo — así venía la historia:",
+            [],
+            [],
+        )
+    ]
     historial, mostradas = reconstruir_historial(estado)
     st.session_state.historial_visible.extend(historial)
     st.session_state.imagenes_mostradas = mostradas
@@ -149,21 +163,23 @@ def aplicar_cambio_del_agente(cambio):
     """Aplica el switch de partida que el agente propuso; lo ignora si es inválido.
 
     El agente ya le reportó el error al usuario: acá la app solo valida en silencio.
+    Todo cambio abre un chat nuevo: un chat por partida (S3).
     """
     if cambio["accion"] == "retomar":
         estado = estado_retomable(cambio["id_partida"])
         if estado is None:
             return
+        st.session_state.id_chat = uuid.uuid4().hex
         st.session_state.id_partida = cambio["id_partida"]
         st.session_state.listado_pendiente = None
-        st.session_state.historial_visible.append(
+        st.session_state.historial_visible = [
             (
                 "assistant",
-                f"Retomaste la partida `{cambio['id_partida'][:8]}` — así venía la historia:",
+                f"Abriste la partida `{cambio['id_partida'][:8]}` en un chat nuevo — así venía la historia:",
                 [],
                 [],
             )
-        )
+        ]
         historial, mostradas = reconstruir_historial(estado)
         st.session_state.historial_visible.extend(historial)
         st.session_state.imagenes_mostradas = mostradas
@@ -172,53 +188,141 @@ def aplicar_cambio_del_agente(cambio):
             consultar_estado(cambio["id_partida"])
         except (ValueError, OSError):
             return
+        st.session_state.id_chat = uuid.uuid4().hex
         st.session_state.id_partida = cambio["id_partida"]
         st.session_state.listado_pendiente = None
         st.session_state.imagenes_mostradas = set()
 
 
-def ejecutar_nueva_partida():
-    """Crea la partida, lo confirma en el chat y le pide al agente el capítulo 1.
+INSTRUCCION_CAPITULO_1 = (
+    "The application already created the game session and set it as the "
+    "active game. Begin chapter 1 now following the mandatory workflow."
+)
 
-    La partida ya existe cuando el agente arranca: el turno sintético le ordena
-    escribir el capítulo 1, no crear otra partida. No se toca el historial: el
-    chat sigue siendo la misma conversación.
+
+def partida_sin_capitulos():
+    """True si el chat actual tiene una partida guardada y todavía sin capítulos."""
+    if not st.session_state.id_partida:
+        return False
+    try:
+        estado = consultar_estado(st.session_state.id_partida)
+    except (ValueError, OSError):
+        return False
+    return not estado["capitulos"]
+
+
+def ejecutar_nueva_partida():
+    """Instrucción explícita de juego (S11): /nueva o el pedido del usuario.
+
+    Si el chat actual tiene una partida sin capítulos (la que dejó el botón
+    "Nuevo chat"), arranca el capítulo 1 acá mismo con un turno sintético. Si
+    la partida ya estaba en marcha o terminada, o no hay ninguna, abre un chat
+    nuevo con una partida nueva y escribe el capítulo 1 ahí: un chat por
+    partida (S3).
     """
+    if partida_sin_capitulos():
+        turno_del_agente(INSTRUCCION_CAPITULO_1)
+        return
+
     id_partida = crear_partida()
+    st.session_state.id_chat = uuid.uuid4().hex
     st.session_state.id_partida = id_partida
     st.session_state.listado_pendiente = None
     st.session_state.imagenes_mostradas = set()
 
     nota = (
-        f"Listo, creé una partida nueva (`{id_partida[:8]}`). "
-        "Ya te arranco con el capítulo 1."
+        f"Listo, te abrí un chat nuevo con una partida nueva (`{id_partida[:8]}`) "
+        "y ya te arranco con el capítulo 1."
     )
-    st.session_state.historial_visible.append(("assistant", nota, [], []))
+    st.session_state.historial_visible = [("assistant", nota, [], [])]
     with st.chat_message("assistant"):
         st.markdown(nota)
 
-    instruccion = (
-        "The application already created the game session and set it as the "
-        "active game. Begin chapter 1 now following the mandatory workflow."
-    )
-    turno_del_agente(instruccion)
+    turno_del_agente(INSTRUCCION_CAPITULO_1)
 
 
 def ejecutar_nuevo_chat():
-    """Reinicia la conversación al estado inicial de una app recién abierta.
+    """Crea un chat nuevo con una partida nueva esperando la instrucción (S11).
 
-    Cambia el hilo del chat (id_chat nuevo), borra el historial y deja la app
-    sin partida activa. La partida que estaba activa, si la había, queda
-    guardada en disco: se retoma con /retomar. Solo se limpia el chat.
+    Un chat es una partida: el botón único "Nuevo chat" crea la partida (sin
+    escribir capítulos) y la deja activa en un hilo nuevo. La historia no
+    arranca sola (S2): espera la instrucción del usuario, que puede ser
+    /nueva o un pedido en lenguaje natural.
     """
+    id_partida = crear_partida()
     st.session_state.id_chat = uuid.uuid4().hex
-    st.session_state.id_partida = ""
+    st.session_state.id_partida = id_partida
     st.session_state.historial_visible = [
-        ("assistant", comandos_chat.saludo_inicial(), [], [])
+        ("assistant", mensaje_de_bienvenida(id_partida), [], [])
     ]
     st.session_state.imagenes_mostradas = set()
     st.session_state.listado_pendiente = None
     st.rerun()
+
+
+def mensaje_de_bienvenida(id_partida):
+    """Primer mensaje de un chat recién creado: partida lista, sin capítulos."""
+    return (
+        f"¡Hola! Te abrí un chat nuevo con una partida lista (`{id_partida[:8]}`). "
+        "Todavía no escribí nada: la historia arranca cuando vos me lo pidas.\n\n"
+        "Decime **«empezá»** cuando quieras arrancar, o **/ayuda** para ver "
+        "todo lo que puedo hacer."
+    )
+
+
+def entradas_del_sidebar():
+    """Chats-partida guardados (abiertas y terminadas), más recientes primero (S10).
+
+    Mismo orden por mtime que listar_partidas_abiertas, sin el filtro de
+    abiertas: la lista del sidebar muestra todos los chats. Los JSON ilegibles
+    se ignoran, igual que en el listado del chat.
+    """
+    entradas = []
+    for id_partida in partidas_guardadas():
+        try:
+            estado = consultar_estado(id_partida)
+        except (ValueError, OSError):
+            continue
+        capitulos = estado["capitulos"]
+        entradas.append(
+            {
+                "id_partida": id_partida,
+                "capitulos": len(capitulos),
+                "titulo": capitulos[-1]["titulo"] if capitulos else "Partida nueva",
+                "finalizada": estado["finalizada"],
+            }
+        )
+    return entradas
+
+
+def dibujar_lista_de_chats():
+    """Lista tipo ChatGPT de los chats-partida; la activa va resaltada (S10).
+
+    Devuelve el id de la partida a abrir en un chat nuevo, o None.
+    """
+    elegida = None
+    activa = st.session_state.id_partida
+    entradas = entradas_del_sidebar()
+    if not entradas:
+        st.caption("Todavía no hay partidas guardadas.")
+        return elegida
+
+    for entrada in entradas:
+        es_activa = entrada["id_partida"] == activa
+        detalle = f"{entrada['capitulos']} de {TOTAL_CAPITULOS} capítulos"
+        if entrada["finalizada"]:
+            detalle += " · terminada"
+        etiqueta = f"{'▶ ' if es_activa else ''}{entrada['titulo']} ({detalle})"
+        if st.button(
+            etiqueta,
+            key=f"chat_{entrada['id_partida']}",
+            type="primary" if es_activa else "secondary",
+            use_container_width=True,
+        ):
+            # La activa ya es el chat de esa partida: un clic no abre otro chat.
+            if not es_activa:
+                elegida = entrada["id_partida"]
+    return elegida
 
 
 with st.sidebar:
@@ -228,22 +332,14 @@ with st.sidebar:
     else:
         st.info("Sin partida activa")
 
-    nueva_pedida = st.button("Nueva partida")
+    nuevo_chat_pedida = st.button("Nuevo chat", use_container_width=True)
+    st.caption(
+        "Crea un chat con una partida nueva en blanco; la historia arranca "
+        "cuando se lo pedís."
+    )
 
-    nuevo_chat_pedida = st.button("Nuevo chat")
-    st.caption("Arranca una conversación nueva; las partidas quedan guardadas.")
-
-    opciones_guardadas = partidas_guardadas()
-    retomar_pedida = None
-    if opciones_guardadas:
-        elegida = st.selectbox(
-            "Retomar partida guardada",
-            options=opciones_guardadas,
-            format_func=lambda identificador: identificador[:8],
-            index=0,
-        )
-        if st.button("Retomar esta partida"):
-            retomar_pedida = elegida
+    st.write("**Chats**")
+    retomar_pedida = dibujar_lista_de_chats()
 
     proveedor, modelo = proveedor_y_modelo()
     st.caption(f"**Modelo:** {proveedor} · `{modelo}`")
@@ -258,7 +354,10 @@ def mostrar_estado():
     """Muestra el estado de la partida desde el JSON."""
     with panel_estado.container():
         if not st.session_state.id_partida:
-            st.info("Sin partida activa. Podés empezar una con **/nueva** o retomar una guardada.")
+            st.info(
+                "Sin partida activa. Podés empezar una con **/nueva** o abrir una "
+                "guardada desde la lista de chats."
+            )
             return
 
         try:
@@ -472,15 +571,12 @@ if estado_actual:
 mensaje_escrito = st.chat_input("Escribí tu mensaje o un comando (/ayuda)...")
 pregunta = opcion_elegida or mensaje_escrito
 
-# Botones del sidebar: mismos caminos que los comandos del chat.
-if nueva_pedida:
-    ejecutar_nueva_partida()
-
+# Botones del sidebar y comandos del chat: mismos caminos.
 if nuevo_chat_pedida:
     ejecutar_nuevo_chat()
 
 if retomar_pedida:
-    if retomar_partida_determinista(retomar_pedida):
+    if abrir_chat_de_partida(retomar_pedida):
         st.rerun()
 
 if pregunta:
@@ -497,7 +593,7 @@ if pregunta:
         )
         st.rerun()
 
-    if comando in ("retomar", "partidas"):
+    if comando == "partidas":
         abiertas = listar_partidas_abiertas(limite=comandos_chat.LIMITE_PARTIDAS)
         st.session_state.historial_visible.append(
             ("assistant", comandos_chat.formatear_listado(abiertas), [], [])
@@ -508,13 +604,13 @@ if pregunta:
     if comando == "nueva":
         ejecutar_nueva_partida()
 
-    # Elección numérica sobre un listado pendiente: retomar sin pasar por el agente.
+    # Elección numérica sobre un listado pendiente: se abre en un chat nuevo (S3).
     listado = st.session_state.listado_pendiente or []
     eleccion = comandos_chat.eleccion_numerica(pregunta, len(listado))
     if listado:
         st.session_state.listado_pendiente = None
         if eleccion:
-            if retomar_partida_determinista(listado[eleccion - 1]["id_partida"]):
+            if abrir_chat_de_partida(listado[eleccion - 1]["id_partida"]):
                 st.rerun()
             st.stop()
 

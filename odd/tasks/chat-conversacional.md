@@ -12,10 +12,10 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
 - S2: "mediantes una instruccion pueda empezar una nueva partida" — la
   historia no arranca porque sí al escribir cualquier cosa; arranca solo por
   instrucción explícita (comando `/nueva` o pedido en lenguaje natural).
-- S3: "que yo pueda pedir retomar una partida y me liste las partidas abiertas
-  (ultimas 3 o 5 abiertas) y asi elegir una y poder retormarla en ese mismo
-  chat" — decisión confirmada: listar las últimas **3** por defecto y retomar
-  en el mismo chat.
+- S3 (reescrito, L8): "Cada vez que retomo una partida, sea de donde sea, se
+  tiene que retomar un chat nuevo" — retomar SIEMPRE abre un chat nuevo con
+  esa partida (conversación reconstruida desde el JSON), nunca continúa en el
+  chat actual. El listado de abiertas es solo con /partidas (últimas 3).
 - S4: "Partidas abiertas son las que no llegaron a un final" — criterio:
   `finalizada=False` en el JSON de la partida.
 - S5: "tiene que poder responder a la consulta sin salir de la partida activa.
@@ -23,10 +23,10 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   que tomemos las decisiones de la patida actual" — las meta-consultas no
   avanzan ni cerrran la partida activa; al final se vuelven a ofrecer las
   opciones pendientes del capítulo en curso.
-- S6: "Quiero una mezcla entre ambos" (comandos + lenguaje natural) — decisión
-  confirmada: comandos deterministas `/nueva`, `/retomar`, `/partidas`,
-  `/ayuda` resueltos por la app sin LLM; el resto va a un único agente con
-  tools de meta-consulta.
+- S6 (reescrito, L8): "Hay dos comandos ambiguos: /retomar y /partidas. Yo
+  dejaria solamente /partidas" — comandos: `/nueva`, `/partidas`, `/ayuda`;
+  `/retomar` se elimina. Los comandos los resuelve la app sin LLM; el resto
+  va a un único agente con tools de meta-consulta.
 - S7: "hay un chat que es una partida nueva y escribas lo que escribas arranca
   la partida igual" (comportamiento a eliminar) — la partida no se crea al
   cargar la app ni arranca con cualquier mensaje.
@@ -40,6 +40,19 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
 - S9: "no tengo un boton para empezar un nuevo chat, y todas las partidas
   arrancan o continuan en el chat actual" — hace falta un botón "Nuevo chat"
   que limpie la conversación (hoy todo se acumula en el chat actual).
+- S10 (L8): "Los chats actualmente estan en un desplegable con un botón de
+  retomar esta partida. Lo que me gustaria es que se vean como chats, tipo
+  chat gpt y tocandolos me retome el chat con la partida esa" — el sidebar
+  lista los chats-partida tipo ChatGPT (más recientes primero, activo
+  resaltado) y tocar una entrada retoma esa partida en un chat nuevo.
+- S11 (L8+L9): "El boton de 'Nueva partida' y 'Nuevo chat' me resultan raros
+  los dos" — queda UN SOLO botón, "Nuevo chat" (decisión del cuestionario:
+  modelo "el chat ES la partida"; arranque "Espera mi instrucción"): crea
+  chat + partida nueva y espera la instrucción para escribir el capítulo 1
+  (conserva S2). El botón "Nueva partida" y el desplegable "Retomar partida
+  guardada" desaparecen. `/nueva` = instrucción explícita de juego: si el
+  chat actual tiene una partida sin capítulos, arranca capítulo 1 en ese
+  turno; si ya tiene capítulos, crea chat + partida nueva y arranca ahí.
 
 ## Tasks
 
@@ -70,6 +83,10 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   que resetea la conversación a estado inicial (nuevo `id_chat`, historial
   limpio con saludo, sin partida activa; las partidas quedan guardadas y se
   retoman con /retomar). Commit U4: 7e24888.
+- T9 (S3, S6, S10, S11): revisión de UX: sidebar tipo ChatGPT con
+  chats-partida, retomar siempre en chat nuevo, /retomar eliminado, /nueva
+  con semántica de instrucción de juego, botón único "Nuevo chat" que crea
+  partida a la espera; README. Commit U5.
 
 ## Log
 
@@ -113,3 +130,18 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   chat, y todas las partidas arrancan o continuan en el chat actual".
   Reproducción por el orquestador: IndexError en comandos_chat.formatear_listado
   con una partida abierta de 0 capítulos (resumen_ultimo_capitulo vacío).
+- L8 (revisión de UX del usuario, textual): "Perfecto. Ya quedo mejor. Hay
+  algunas cosas que hay que arreglar: - Hay dos comandos ambiguos: /retomar y
+  /partidas. Yo dejaria solamente /partidas - Tenemos botones y funciones que
+  no van. Por ejemplo. El boton de 'Nueva partida' y 'Nuevo chat' me resultan
+  raros los dos. cual dejarias vos ? Y que implementacion le podemos dar. Que
+  el chat sea chat o que cada chat inicie una nueva partida de una ? - Cada
+  vez que retomo una partida, sea de donde sea, se tiene que retomar un chat
+  nuevo - Los chats actualmente estan en un desplegable con un botón de
+  retomar esta partida. Lo que me gustaria es que se vean como chats, tipo
+  chat gpt y tocandolos me retome el chat con la partida esa Pero tengo la
+  duda de si el chat es un si deberia ser una partida, o si el chat es chat y
+  la partida se carga sobre un chat efimero"
+- L9 (cuestionario de diseño): modelo "El chat ES la partida" (uno a uno,
+  sidebar tipo ChatGPT, botón único "Nuevo chat"); arranque "Espera mi
+  instrucción" (el chat nuevo no escribe capítulo 1 hasta que se lo pida).

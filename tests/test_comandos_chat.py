@@ -8,23 +8,27 @@ import comandos_chat as cc
 # --- parsear_comando --------------------------------------------------------
 
 
-def test_reconoce_los_cuatro_comandos():
+def test_reconoce_los_tres_comandos():
     assert cc.parsear_comando("/nueva") == "nueva"
-    assert cc.parsear_comando("/retomar") == "retomar"
     assert cc.parsear_comando("/partidas") == "partidas"
     assert cc.parsear_comando("/ayuda") == "ayuda"
 
 
+def test_retomar_ya_no_es_un_comando():
+    """S6: /retomar se elimina; el texto va al agente como cualquier mensaje."""
+    assert cc.parsear_comando("/retomar") is None
+
+
 def test_comandos_insensibles_a_mayusculas():
     assert cc.parsear_comando("/NUEVA") == "nueva"
-    assert cc.parsear_comando("/Retomar") == "retomar"
     assert cc.parsear_comando("/PARTIDAS") == "partidas"
     assert cc.parsear_comando("/Ayuda") == "ayuda"
+    assert cc.parsear_comando("/RETOMAR") is None
 
 
 def test_comandos_toleran_espacios():
     assert cc.parsear_comando("  /nueva  ") == "nueva"
-    assert cc.parsear_comando("\t/retomar\n") == "retomar"
+    assert cc.parsear_comando("\t/partidas\n") == "partidas"
 
 
 def test_sin_barra_no_es_comando():
@@ -42,10 +46,6 @@ def test_texto_comun_no_es_comando():
 def test_comando_desconocido():
     assert cc.parsear_comando("/inventar") is None
     assert cc.parsear_comando("/nueva partida ya") is None
-
-
-def test_retomar_y_partidas_son_tokens_distintos():
-    assert cc.parsear_comando("/retomar") != cc.parsear_comando("/partidas")
 
 
 # --- formatear_listado ------------------------------------------------------
@@ -91,9 +91,11 @@ def test_listado_numerado_con_encabezado_en_negrita():
     assert "\n2." in texto
 
 
-def test_listado_invita_a_elegir_en_voseo():
+def test_listado_invita_a_elegir_en_voseo_y_anuncia_chat_nuevo():
+    """S3: elegir del listado abre la partida en un chat nuevo."""
     texto = cc.formatear_listado([resumen()])
     assert "número" in texto.lower()
+    assert "chat nuevo" in texto.lower()
 
 
 def test_listado_sin_capitulos_no_muestra_titulo():
@@ -212,17 +214,26 @@ def test_con_una_sola_partida_solo_acepta_uno():
 # --- texto_ayuda y saludo_inicial -------------------------------------------
 
 
-def test_ayuda_menciona_los_cuatro_comandos():
+def test_ayuda_menciona_los_tres_comandos():
     texto = cc.texto_ayuda()
-    for comando in ("/nueva", "/retomar", "/partidas", "/ayuda"):
+    for comando in ("/nueva", "/partidas", "/ayuda"):
         assert comando in texto
+    # S6: /retomar ya no existe como comando.
+    assert "/retomar" not in texto
+
+
+def test_ayuda_explica_como_elegir_y_menciona_el_sidebar():
+    texto = cc.texto_ayuda().lower()
+    assert "número" in texto
+    assert "barra lateral" in texto
 
 
 def test_ayuda_explica_que_puede_hacer_el_chat():
     texto = cc.texto_ayuda().lower()
     assert "partidas anteriores" in texto
     assert "nueva" in texto
-    assert "retomar" in texto
+    # S3: retomar siempre abre un chat nuevo; la ayuda lo dice explícito.
+    assert "chat nuevo" in texto
 
 
 def test_saludo_inicial_menciona_la_ayuda():

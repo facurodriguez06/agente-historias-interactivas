@@ -1,4 +1,4 @@
-"""Comandos deterministas del chat: /nueva, /retomar, /partidas y /ayuda.
+"""Comandos deterministas del chat: /nueva, /partidas y /ayuda.
 
 Vive fuera de app.py para poder testearlo sin Streamlit y sin LLM. Todo lo que
 devuelven estas funciones son strings o escalares, así se guardan tal cual en
@@ -16,7 +16,6 @@ LIMITE_PARTIDAS = 3
 
 _COMANDOS = {
     "/nueva": "nueva",
-    "/retomar": "retomar",
     "/partidas": "partidas",
     "/ayuda": "ayuda",
 }
@@ -29,8 +28,9 @@ def parsear_comando(mensaje):
 
     Acepta la barra inicial seguida del comando, sin distinguir mayúsculas y
     tolerando espacios alrededor. Sin la barra ("nueva") no es comando: eso va
-    al agente como texto común. "retomar" y "partidas" vuelven como tokens
-    distintos; la app trata a ambos como "listar partidas abiertas".
+    al agente como texto común. No queda ningún comando muerto: "/retomar" se
+    eliminó (el listado vive solo en /partidas y en el sidebar) y cualquier
+    otra barra vuelve None, o sea, texto común para el agente.
     """
     texto = (mensaje or "").strip().lower()
     return _COMANDOS.get(texto)
@@ -76,7 +76,7 @@ def formatear_listado(abiertas):
         "**Partidas abiertas**\n\n"
         + "\n".join(entradas)
         + "\n\nRespondé con el número de la partida que querés retomar "
-        "(o describila con tus palabras)."
+        "(o describila con tus palabras); se abre en un chat nuevo."
     )
 
 
@@ -100,12 +100,16 @@ def eleccion_numerica(mensaje, cantidad):
 
 
 def texto_ayuda():
-    """Ayuda del chat: los cuatro comandos y qué más puede hacer el chat."""
+    """Ayuda del chat: los tres comandos y qué más puede hacer el chat."""
     return (
         "**Comandos**\n\n"
-        "- **/nueva**: arranca una partida nueva desde cero.\n"
-        "- **/retomar**: te listo las partidas abiertas para retomar una acá mismo.\n"
-        "- **/partidas**: igual que /retomar, muestra las partidas abiertas.\n"
+        "- **/nueva**: arranca una partida nueva. Si este chat todavía no "
+        "escribió capítulos, empieza el capítulo 1 acá mismo; si la partida ya "
+        "estaba en marcha (o terminada), abre un chat nuevo con una partida "
+        "nueva y arranca ahí.\n"
+        "- **/partidas**: te lista las partidas abiertas; respondé con el "
+        "número de la que querés y la abrimos en un chat nuevo. También podés "
+        "elegir una partida desde la lista de chats de la barra lateral.\n"
         "- **/ayuda**: muestra esta ayuda.\n\n"
         "Además podés preguntarme cosas en común: cómo venían tus partidas "
         "anteriores, qué objetos o pistas juntaste, o qué misterios quedaron "
