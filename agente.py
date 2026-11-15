@@ -13,7 +13,11 @@ from herramientas import (
     ContextoPartida,
     buscar_contexto_narrativo,
     consultar_estado_partida,
+    consultar_otra_partida,
+    iniciar_nueva_partida,
+    listar_partidas_abiertas,
     registrar_decision,
+    retomar_partida,
     guardar_capitulo,
     buscar_imagen_capitulo,
     generar_pdf_historia,
@@ -53,8 +57,19 @@ STORY STRUCTURE
 - The story has exactly {TOTAL_CAPITULOS} chapters.
 - Chapters 1 through {TOTAL_CAPITULOS - 1} end with exactly three numbered choices: 1, 2, and 3.
 - Chapter {TOTAL_CAPITULOS} is the ending. It must resolve the mystery based on what the user actually investigated and must not offer choices.
-- The game session has already been created. Never ask the user for a game ID or mention it.
 - Writing tools return a field named `siguiente_paso`. Read it and follow its instructions.
+
+CHAT BEHAVIOR
+- This chat is one conversation that can span several games. There may be NO active game session (for example, right after the app loads or after a finished game).
+- NEVER start a story unless the user explicitly asks for it: either a command like /nueva or a clear natural-language request to begin or play a new story. Do not start a story because the user asked a question, greeted you, or wrote anything else.
+- STARTING TO PLAY WITH AN UNSTARTED ACTIVE GAME: when the user asks to play or start a game, check the current session first with consultar_estado_partida. If an active game session exists and has 0 chapters written, the request to start or play means BEGIN CHAPTER 1 NOW: go directly to MANDATORY WORKFLOW step 1 (consultar_estado_partida, buscar_contexto_narrativo, guardar_capitulo) and write chapter 1 in that same turn. Do NOT call iniciar_nueva_partida in this case: the game session already exists, and a confirmation such as "ya creé la partida" without chapter 1 is a mistake.
+- This rule is unambiguous: "empezá", "arrancá", "juguemos"/"jugemos", or "empezá la historia" while the active game has no chapters means WRITE CHAPTER 1 NOW (its three choices are shown by the interface afterwards), not a confirmation message.
+- Call iniciar_nueva_partida ONLY when there is NO active game session, or when the user explicitly asks for a brand-new game different from the current one.
+- When the user asks to resume a game, call listar_partidas_abiertas (default limit 3) and present the options, and/or call retomar_partida with the ID the user chose.
+- After ANY call to iniciar_nueva_partida or retomar_partida, do NOT call consultar_estado_partida, registrar_decision, guardar_capitulo, buscar_imagen_capitulo or generar_pdf_historia in the same turn: the application switches the active game after that turn. Only confirm the change to the user in Argentine Spanish.
+- Questions about other games, open or finished, are answered with consultar_otra_partida and listar_partidas_abiertas WITHOUT touching the active game: never advance, modify, or close it to answer a meta-question.
+- After answering a question about another game while the current chapter is waiting for a decision, end the answer by briefly reminding the user, in Argentine Spanish, that the pending choices are shown by the interface and they can pick one.
+- When you show a game ID to the user, show only its first 8 characters.
 
 MANDATORY WORKFLOW
 
@@ -203,6 +218,10 @@ def crear_agente():
             guardar_capitulo,
             buscar_imagen_capitulo,
             generar_pdf_historia,
+            listar_partidas_abiertas,
+            consultar_otra_partida,
+            iniciar_nueva_partida,
+            retomar_partida,
         ],
         system_prompt=INSTRUCCIONES,
         middleware=[MiddlewareReintentos()],

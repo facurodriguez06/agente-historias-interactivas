@@ -20,9 +20,15 @@ from ingestar import DB_DIR, MODELO_EMBEDDINGS, COLECCION
 
 @dataclass
 class ContextoPartida:
-    """Game session context provided by the application."""
+    """Game session context provided by the application.
 
-    id_partida: str
+    An empty id_partida means there is no active game session yet.
+    """
+
+    id_partida: str = ""
+
+
+SIN_PARTIDA_ACTIVA = "No active game session. Ask the user to start a new game or resume an open one."
 
 
 @lru_cache(maxsize=1)
@@ -76,6 +82,8 @@ def consultar_estado_partida(runtime: ToolRuntime[ContextoPartida]) -> dict:
     Call before generating a chapter or registering a decision.
     Takes no arguments.
     """
+    if not runtime.context.id_partida:
+        return {"error": SIN_PARTIDA_ACTIVA}
     try:
         estado = estado_partida.consultar_estado(runtime.context.id_partida)
 
@@ -151,6 +159,8 @@ def registrar_decision(
     Respect the retrieved RAG context and existing game state.
     If an error occurs, correct the arguments and retry.
     """
+    if not runtime.context.id_partida:
+        return {"error": SIN_PARTIDA_ACTIVA}
     try:
         return estado_partida.registrar_decision(
             runtime.context.id_partida,
@@ -193,6 +203,8 @@ def guardar_capitulo(
 
     Never duplicate collected objects or established facts.
     """
+    if not runtime.context.id_partida:
+        return {"error": SIN_PARTIDA_ACTIVA}
     try:
         resultado = estado_partida.guardar_capitulo(
             runtime.context.id_partida,
@@ -224,6 +236,8 @@ def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
 
     Can only be used after chapter 5 is saved. Returns the generated path.
     """
+    if not runtime.context.id_partida:
+        return SIN_PARTIDA_ACTIVA
     try:
         return generar_pdf(runtime.context.id_partida)
     except (ValueError, OSError) as e:
@@ -243,6 +257,8 @@ def buscar_imagen_capitulo(
     Retry once with a more general query if the search fails; then continue
     without an image. The result is attached to the chapter and its PDF.
     """
+    if not runtime.context.id_partida:
+        return {"error": SIN_PARTIDA_ACTIVA}
     try:
         id_partida = runtime.context.id_partida
         numero, ya_usadas = estado_partida.capitulo_para_imagen(id_partida)
@@ -253,6 +269,103 @@ def buscar_imagen_capitulo(
             "capitulo": numero,
             "autor": foto["autor"],
             "descripcion": foto["descripcion"],
+        }
+    except (ValueError, OSError) as e:
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Chat tools: listado, consulta y control de sesiones de partida
+# ---------------------------------------------------------------------------
+
+
+@tool
+def listar_partidas_abiertas(limite: int | None = None) -> dict:
+    """List the user's open games, most recent first. These are UNFINISHED games.
+
+    An open game is one that has not reached its ending; every one of them can
+    be resumed with retomar_partida.
+    Each summary contains: id_partida, capitulos_escritos, capitulo_actual,
+    titulo_ultimo_capitulo, resumen_ultimo_capitulo and decision_pendiente.
+    - limite: maximum number of games to return; omit it to list them all.
+    Use this tool when the user wants to see, resume, or ask about their open
+    games. Takes no arguments besides the optional limit.
+    """
+    try:
+        return {"partidas": estado_partida.listar_partidas_abiertas(limite)}
+    except (ValueError, OSError) as e:
+        return {"error": str(e)}
+
+
+@tool
+def consultar_otra_partida(id_partida: str) -> dict:
+    """Read-only inspection of ANOTHER game, open or finished, without touching the active one.
+
+    Use it to answer questions about past games (their chapters, decisions,
+    inventory, clues, or how they ended). It never advances or modifies any game.
+    - id_partida: the exact ID of the other game, as shown by
+      listar_partidas_abiertas or provided by the user.
+    Returns the full saved state plus siguiente_paso, and does not require an
+    active game session.
+    """
+    try:
+        estado = estado_partida.consultar_estado(id_partida)
+        return {**estado, "siguiente_paso": estado_partida.siguiente_paso(estado)}
+    except (ValueError, OSError) as e:
+        return {"error": str(e)}
+
+
+def _instruccion_de_cambio_de_sesion(confirmacion: str) -> str:
+    """Instrucción común para iniciar_nueva_partida y retomar_partida."""
+    return (
+        "The application switches the active game to this session AFTER this turn. "
+        "Do NOT call consultar_estado_partida, registrar_decision, "
+        "guardar_capitulo, buscar_imagen_capitulo or generar_pdf_historia in this "
+        f"same turn. Only confirm to the user, in Argentine Spanish, {confirmacion}."
+    )
+
+
+INSTRUCCION_NUEVA_PARTIDA = _instruccion_de_cambio_de_sesion(
+    "that a new game was created and that the story starts with their next message"
+)
+INSTRUCCION_RETOMAR_PARTIDA = _instruccion_de_cambio_de_sesion(
+    "the game will be resumed with its saved chapters and context"
+)
+
+
+@tool
+def iniciar_nueva_partida() -> dict:
+    """Create a new game session for the user. Call ONLY when the user asks to start one.
+
+    Takes no arguments. Returns the new id_partida plus an instruction that
+    MUST be followed: do not write chapters or call game tools in the same
+    turn; the application applies the switch after this turn.
+    """
+    try:
+        id_partida = estado_partida.crear_partida()
+        return {"id_partida": id_partida, "instruccion": INSTRUCCION_NUEVA_PARTIDA}
+    except (ValueError, OSError) as e:
+        return {"error": str(e)}
+
+
+@tool
+def retomar_partida(id_partida: str) -> dict:
+    """Propose resuming an open (unfinished) game chosen from listar_partidas_abiertas.
+
+    - id_partida: the exact ID of the game to resume.
+    Returns the game state plus siguiente_paso and an instruction that MUST be
+    followed: do not write chapters or call game tools in the same turn; the
+    application applies the switch after this turn. Finished games are
+    rejected: offer to start a new one instead.
+    """
+    try:
+        estado = estado_partida.consultar_estado(id_partida)
+        if estado["finalizada"]:
+            return {"error": "That game is already finished; start a new one instead"}
+        return {
+            **estado,
+            "siguiente_paso": estado_partida.siguiente_paso(estado),
+            "instruccion": INSTRUCCION_RETOMAR_PARTIDA,
         }
     except (ValueError, OSError) as e:
         return {"error": str(e)}

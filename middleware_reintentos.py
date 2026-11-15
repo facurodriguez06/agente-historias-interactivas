@@ -151,9 +151,21 @@ class MiddlewareReintentos(AgentMiddleware):
     def wrap_model_call(self, request, handler):
         respuesta = self._llamar(request, handler)
         for intento in range(1, REINTENTOS_VACIA + 1):
-
             mensaje = _mensaje_ai(respuesta)
+            motivo = _motivo_mal_formada(mensaje)
+            if motivo is None:
+                return respuesta
+            guardar_mensaje_crudo(mensaje)
+            log.warning("Reintento %d/%d por %s", intento, REINTENTOS_VACIA, motivo)
+            pedido = request
+            if intento == REINTENTOS_VACIA:
+                # El aviso va solo en este pedido: no queda guardado en el historial.
+                pedido = request.override(
+                    messages=[*request.messages, HumanMessage(AVISO_FORMATO)]
+                )
+            respuesta = self._llamar(pedido, handler)
 
+        mensaje = _mensaje_ai(respuesta)
         if motivo := _motivo_mal_formada(mensaje):
             guardar_mensaje_crudo(mensaje)
 

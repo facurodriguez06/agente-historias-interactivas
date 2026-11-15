@@ -40,7 +40,7 @@ def llamada(nombre, **args):
     return AIMessage(content="", tool_calls=[{"name": nombre, "args": args, "id": f"id{nombre}"}])
 
 
-def crear(guion):
+def crear(guion, extra_tools=()):
     return create_agent(
         model=ModeloGuionado(guion=guion),
         tools=[
@@ -48,6 +48,7 @@ def crear(guion):
             herramientas.registrar_decision,
             herramientas.guardar_capitulo,
             herramientas.generar_pdf_historia,
+            *extra_tools,
         ],
         context_schema=herramientas.ContextoPartida,
         checkpointer=InMemorySaver(),
@@ -115,3 +116,67 @@ def test_partidas_distintas_no_se_mezclan():
     correr(agente, a, "Empezá")
     assert len(ep.consultar_estado(a)["capitulos"]) == 1
     assert ep.consultar_estado(b)["capitulos"] == []
+
+
+def test_empezar_con_partida_activa_sin_capitulos_escribe_el_capitulo_1(monkeypatch):
+    """S12: "empezá" con una partida activa de 0 capítulos escribe el capítulo 1
+    en ese mismo turno, sin llamar a iniciar_nueva_partida (la sesión ya existe).
+    """
+
+    class BaseFalsa:
+        def similarity_search(self, consulta, k=3):
+            return []
+
+    # RAG hermético: la tool de contexto corre sin cargar el modelo de embeddings.
+    monkeypatch.setattr(herramientas, "obtener_base", lambda: BaseFalsa())
+
+    id_partida = ep.crear_partida()
+    partidas_antes = len(list(ep.CARPETA_PARTIDAS.glob("*.json")))
+    agente = crear(
+        [
+            llamada("consultar_estado_partida"),
+            llamada("buscar_contexto_narrativo", consulta="old mansion entrance hall fog"),
+            llamada(
+                "guardar_capitulo",
+                titulo="La llegada",
+                texto="Entrás a la casona.",
+                opciones=["A", "B", "C"],
+                ubicacion_actual="Entrance Hall",
+                hechos_nuevos=[],
+                misterios_nuevos=["Who owns the mansion?"],
+                misterios_resueltos=[],
+                resumen_contexto="The protagonist arrives at the mansion.",
+            ),
+            AIMessage(content="Capítulo 1: La llegada"),
+        ],
+        extra_tools=[herramientas.buscar_contexto_narrativo, herramientas.iniciar_nueva_partida],
+    )
+    respuesta = correr(agente, id_partida, "empezá")
+
+    nombres = [m.name for m in resultados_de_tools(respuesta)]
+    assert "guardar_capitulo" in nombres
+    assert "iniciar_nueva_partida" not in nombres
+    assert "consultar_estado_partida" in nombres
+    assert "buscar_contexto_narrativo" in nombres
+
+    estado = ep.consultar_estado(id_partida)
+    assert len(estado["capitulos"]) == 1
+    assert estado["capitulos"][0]["titulo"] == "La llegada"
+    assert estado["capitulos"][0]["opciones"] == ["A", "B", "C"]
+
+    # No se creó ninguna partida nueva: la sesión activa ya existía.
+    assert len(list(ep.CARPETA_PARTIDAS.glob("*.json"))) == partidas_antes
+
+
+def test_las_instrucciones_ordenan_escribir_el_capitulo_1_con_partida_sin_capitulos():
+    """Aserción barata (sin LLM): el texto de INSTRUCCIONES contiene la regla S12."""
+    import agente
+
+    assert "BEGIN CHAPTER 1 NOW" in agente.INSTRUCCIONES
+    assert "has 0 chapters written" in agente.INSTRUCCIONES
+    assert "jugemos" in agente.INSTRUCCIONES
+    assert "Do NOT call iniciar_nueva_partida in this case" in agente.INSTRUCCIONES
+    # La regla vieja (confirmar sin escribir) ya no puede quedar en el prompt.
+    assert (
+        "confirm the new game was created WITHOUT writing any chapter" not in agente.INSTRUCCIONES
+    )
