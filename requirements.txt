@@ -3,6 +3,7 @@ langchain-deepseek
 langchain-openrouter
 langchain-nvidia-ai-endpoints
 langgraph
+langgraph-checkpoint-sqlite
 langchain-chroma
 langchain-huggingface
 langchain-text-splitters
