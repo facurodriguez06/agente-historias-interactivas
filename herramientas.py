@@ -1,3 +1,4 @@
+
 """Agent tools for RAG, game state, images, and PDF export.
 
 The game ID is provided by the application through ContextoPartida.
@@ -33,6 +34,7 @@ SIN_PARTIDA_ACTIVA = (
 )
 
 
+# RAG: el modelo de embeddings y Chroma se cargan una sola vez.
 @lru_cache(maxsize=1)
 def obtener_base():
     embeddings = HuggingFaceEmbeddings(model_name=MODELO_EMBEDDINGS)
@@ -59,20 +61,18 @@ def buscar_contexto_narrativo(consulta: str) -> str:
 
     try:
         documentos = obtener_base().similarity_search(consulta, k=3)
-
         if not documentos:
             return "No relevant information was found in the corpus."
-
         return "\n\n".join(
             f"Source: {doc.metadata.get('source', 'unknown')}\n"
             f"Content: {doc.page_content}"
             for doc in documentos
         )
-
     except Exception as exc:
         return f"ERROR querying RAG: {type(exc).__name__}: {exc}"
 
 
+# Estado: devolvemos al agente lo que necesita, no el JSON completo.
 @tool
 def consultar_estado_partida(runtime: ToolRuntime[ContextoPartida]) -> dict:
     """Read a compact summary of the current game state.
@@ -88,37 +88,23 @@ def consultar_estado_partida(runtime: ToolRuntime[ContextoPartida]) -> dict:
         return {"error": SIN_PARTIDA_ACTIVA}
     try:
         estado = estado_partida.consultar_estado(runtime.context.id_partida)
-
         capitulos = estado["capitulos"]
         ultimo = capitulos[-1] if capitulos else None
-
-        ultimo_capitulo = None
-        if ultimo:
-            ultimo_capitulo = {
-                "numero": ultimo["numero"],
-                "titulo": ultimo["titulo"],
-                "texto": ultimo["texto"],
-                "opciones": ultimo["opciones"],
-            }
+        ultimo_capitulo = (
+            {campo: ultimo[campo] for campo in ("numero", "titulo", "texto", "opciones")}
+            if ultimo else None
+        )
 
         decisiones = []
-
         for decision in estado["decisiones"]:
-            numero = decision["capitulo"]
-            opcion = decision["opcion"]
-            capitulo = capitulos[numero - 1]
-
-            accion = capitulo["opciones"][opcion - 1]
-
-            decisiones.append(
-                {
-                    "capitulo": numero,
-                    "opcion": opcion,
-                    "accion_elegida": accion,
-                    "objetos_recogidos": decision.get("objetos_recogidos", []),
-                    "objetos_usados": decision.get("objetos_usados", []),
-                }
-            )
+            numero, opcion = decision["capitulo"], decision["opcion"]
+            decisiones.append({
+                "capitulo": numero,
+                "opcion": opcion,
+                "accion_elegida": capitulos[numero - 1]["opciones"][opcion - 1],
+                "objetos_recogidos": decision.get("objetos_recogidos", []),
+                "objetos_usados": decision.get("objetos_usados", []),
+            })
 
         return {
             "capitulos_escritos": len(capitulos),
@@ -131,11 +117,11 @@ def consultar_estado_partida(runtime: ToolRuntime[ContextoPartida]) -> dict:
             "finalizada": estado["finalizada"],
             "siguiente_paso": estado_partida.siguiente_paso(estado),
         }
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
 
-    except (ValueError, OSError) as e:
-        return {"error": str(e)}
 
-
+# Escritura de decisiones y capítulos: el JSON se modifica en estado_partida.py.
 @tool
 def registrar_decision(
     opcion: int,
@@ -165,15 +151,11 @@ def registrar_decision(
         return {"error": SIN_PARTIDA_ACTIVA}
     try:
         return estado_partida.registrar_decision(
-            runtime.context.id_partida,
-            opcion,
-            objetos_recogidos,
-            objetos_usados,
-            pistas_descubiertas,
+            runtime.context.id_partida, opcion,
+            objetos_recogidos, objetos_usados, pistas_descubiertas,
         )
-
-    except (ValueError, OSError) as e:
-        return {"error": str(e)}
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
 
 
 @tool
@@ -209,42 +191,24 @@ def guardar_capitulo(
         return {"error": SIN_PARTIDA_ACTIVA}
     try:
         resultado = estado_partida.guardar_capitulo(
-            runtime.context.id_partida,
-            titulo,
-            texto,
-            opciones,
+            runtime.context.id_partida, titulo, texto, opciones,
             ubicacion_actual=ubicacion_actual,
             hechos_nuevos=hechos_nuevos,
             misterios_nuevos=misterios_nuevos,
             misterios_resueltos=misterios_resueltos,
             resumen_contexto=resumen_contexto,
         )
-
         return {
             "capitulo_guardado": resultado["capitulo_guardado"],
             "finalizada": resultado["finalizada"],
             "imagen_pendiente": resultado["imagen_pendiente"],
             "siguiente_paso": resultado["siguiente_paso"],
         }
-
-    except (ValueError, OSError) as e:
-        return {"error": str(e)}
-
-
-@tool
-def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
-    """Generate a PDF containing the completed story and decisions.
-
-    Can only be used after chapter 5 is saved. Returns the generated path.
-    """
-    if not runtime.context.id_partida:
-        return SIN_PARTIDA_ACTIVA
-    try:
-        return generar_pdf(runtime.context.id_partida)
-    except (ValueError, OSError) as e:
-        return f"Error generating PDF: {e}"
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
 
 
+# Imágenes: se buscan después de guardar el capítulo.
 @tool
 def buscar_imagen_capitulo(
     consulta: str,
@@ -255,36 +219,22 @@ def buscar_imagen_capitulo(
     Uses the location stored in the game's JSON.
     The consulta argument remains for compatibility.
     """
-
     if not runtime.context.id_partida:
         return {"error": SIN_PARTIDA_ACTIVA}
-
     try:
         id_partida = runtime.context.id_partida
-
         numero, ya_usadas = estado_partida.capitulo_para_imagen(id_partida)
-
-        # Recuperamos el estado persistente.
         estado = estado_partida.consultar_estado(id_partida)
-
-        # Obtenemos el último capítulo guardado.
         capitulo = estado["capitulos"][-1]
-
-        # Leemos la ubicación del capítulo.
         contexto = capitulo.get("contexto_narrativo") or estado["contexto_narrativo"]
-
         ubicacion = contexto.get("ubicacion_actual", "")
-
-        # Buscamos la imagen usando esa ubicación.
         foto = imagenes.obtener_imagen(
             consulta,
             excluir_ids=ya_usadas,
             ubicacion=ubicacion,
             escena=capitulo.get("texto", ""),
         )
-
         estado_partida.adjuntar_imagen(id_partida, foto)
-
         return {
             "ok": True,
             "capitulo": numero,
@@ -292,16 +242,26 @@ def buscar_imagen_capitulo(
             "autor": foto["autor"],
             "descripcion": foto["descripcion"],
         }
-
-    except (ValueError, OSError) as e:
-        return {"error": str(e)}
-
-
-# ---------------------------------------------------------------------------
-# Chat tools: listado, consulta y control de sesiones de partida
-# ---------------------------------------------------------------------------
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
 
 
+# PDF: solo puede generarse al completar los cinco capítulos.
+@tool
+def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
+    """Generate a PDF containing the completed story and decisions.
+
+    Can only be used after chapter 5 is saved. Returns the generated path.
+    """
+    if not runtime.context.id_partida:
+        return SIN_PARTIDA_ACTIVA
+    try:
+        return generar_pdf(runtime.context.id_partida)
+    except (ValueError, OSError) as exc:
+        return f"Error generating PDF: {exc}"
+
+
+# Tools de chat: listar, consultar, crear o retomar partidas.
 @tool
 def listar_partidas_abiertas(limite: int | None = None) -> dict:
     """List the user's open games, most recent first. These are UNFINISHED games.
@@ -316,8 +276,14 @@ def listar_partidas_abiertas(limite: int | None = None) -> dict:
     """
     try:
         return {"partidas": estado_partida.listar_partidas_abiertas(limite)}
-    except (ValueError, OSError) as e:
-        return {"error": str(e)}
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
+
+
+def _estado_con_siguiente_paso(id_partida):
+    """Estado completo para las tools que consultan otras partidas."""
+    estado = estado_partida.consultar_estado(id_partida)
+    return {**estado, "siguiente_paso": estado_partida.siguiente_paso(estado)}
 
 
 @tool
@@ -332,10 +298,9 @@ def consultar_otra_partida(id_partida: str) -> dict:
     active game session.
     """
     try:
-        estado = estado_partida.consultar_estado(id_partida)
-        return {**estado, "siguiente_paso": estado_partida.siguiente_paso(estado)}
-    except (ValueError, OSError) as e:
-        return {"error": str(e)}
+        return _estado_con_siguiente_paso(id_partida)
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
 
 
 def _instruccion_de_cambio_de_sesion(confirmacion: str) -> str:
@@ -367,8 +332,8 @@ def iniciar_nueva_partida() -> dict:
     try:
         id_partida = estado_partida.crear_partida()
         return {"id_partida": id_partida, "instruccion": INSTRUCCION_NUEVA_PARTIDA}
-    except (ValueError, OSError) as e:
-        return {"error": str(e)}
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
 
 
 @tool
@@ -382,13 +347,9 @@ def retomar_partida(id_partida: str) -> dict:
     rejected: offer to start a new one instead.
     """
     try:
-        estado = estado_partida.consultar_estado(id_partida)
+        estado = _estado_con_siguiente_paso(id_partida)
         if estado["finalizada"]:
             return {"error": "That game is already finished; start a new one instead"}
-        return {
-            **estado,
-            "siguiente_paso": estado_partida.siguiente_paso(estado),
-            "instruccion": INSTRUCCION_RETOMAR_PARTIDA,
-        }
-    except (ValueError, OSError) as e:
-        return {"error": str(e)}
+        return {**estado, "instruccion": INSTRUCCION_RETOMAR_PARTIDA}
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
