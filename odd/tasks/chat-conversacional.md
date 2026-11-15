@@ -113,8 +113,7 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   keepWithNext en test_imagenes_partida; RuntimeError tras 2 reintentos
   vacíos en test_middleware_reintentos) y reintento de respuestas vacías/
   mal formadas restaurado en middleware_reintentos.py (regresión accidental
-  de main: bucle sin cuerpo, contradecía README y docstring). Commit U7
-  (merge).
+  de main: bucle sin cuerpo, contradecía README y docstring). Commit U7 (merge): 8161a78.
 
 ## Log
 
