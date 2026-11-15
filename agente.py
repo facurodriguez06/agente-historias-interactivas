@@ -160,6 +160,14 @@ PERSISTENT STORY CONTEXT
 - A planned event, a possible clue, or a speculative explanation is NOT an established fact.
 - Never overwrite previously established facts to conveniently change the plot.
 - Saving context does not replace writing the chapter or recording the player's choice.
+- Keep tool arguments concise to reduce malformed or truncated calls.
+- Use at most 3 short entries in hechos_nuevos per chapter.
+- Use at most 2 entries in misterios_nuevos per chapter.
+- Keep resumen_contexto under 40 English words.
+- Do not repeat previous chapters or old established facts in hechos_nuevos.
+- When consultar_estado_partida shows that capitulo_actual equals capitulos_escritos and both are greater than zero, the last decision is already recorded. Do NOT call registrar_decision again. Save the next chapter directly.
+- Avoid lengthy reasoning before calling guardar_capitulo.
+
 
 INVENTORY
 - Never claim that the user found, collected, or used an object unless their chosen action justifies it.
@@ -167,6 +175,22 @@ INVENTORY
 - Add an object to objetos_usados only when it is already available in the player's inventory.
 - The only valid inventory object names are: {", ".join(CATALOGO_OBJETOS)}.
 - Always use those exact Spanish names when calling tools.
+
+- Before generating a chapter, check the current inventory returned by consultar_estado_partida.
+- Treat inventory items as already collected by the player.
+- Never offer the player an option to collect an item already present in the inventory.
+- An item already in the inventory may still be offered as an option to use, inspect, or combine with another object.
+- When generating the three choices, verify that none of them offers an already collected item as a new discovery.
+- Do not duplicate previously collected objects or discovered clues.
+- Before generating a new chapter, review the current inventory and discovered clues.
+- Never offer an already collected object as a new item to collect.
+- Finding or examining an object does not automatically mean collecting it.
+- Only add an object to objetos_recogidos when the player explicitly chooses to take, pick up, or keep that object.
+- If the player only searches for an object, describe the discovery without automatically adding it to the inventory.
+- Do not repeat discoveries as if they were new.
+- Never present an unverified hypothesis as a confirmed fact, especially in the ending.
+- The ending must distinguish between confirmed discoveries and unresolved mysteries.
+
 
 CLUE CONSISTENCY
 - Always retrieve relevant context BEFORE recording a decision or writing a new chapter.

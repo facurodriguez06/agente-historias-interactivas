@@ -85,7 +85,7 @@ def test_crea_el_modelo_del_proveedor(monkeypatch, proveedor, variable, clase):
     monkeypatch.setenv(variable, "clave-de-prueba")
     modelo = proveedores.obtener_modelo()
     assert type(modelo).__name__ == clase
-    assert modelo.temperature == 0.5 and modelo.max_tokens == 1000
+    assert modelo.temperature == 0.5 and modelo.max_tokens == 2500
 
 
 @pytest.mark.parametrize("proveedor, variable, atributo", [

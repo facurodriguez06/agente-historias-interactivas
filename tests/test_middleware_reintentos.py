@@ -126,9 +126,16 @@ def test_tool_call_mal_formada_se_reintenta():
 
 
 def test_vacio_tres_veces_termina_sin_colgarse(logs_temporales):
-    mensajes, modelo, _ = correr([VACIO, VACIO, VACIO])
+    """Tras 2 reintentos la respuesta sigue vacía: corta sin colgarse, con un
+    error claro (desde el merge de main el middleware ya no devuelve la
+    respuesta vacía: avisa que el estado de la partida no se borró)."""
+    esperas = []
+    modelo = ModeloFalso(guion=[VACIO, VACIO, VACIO], recibidos=[])
+    agente = create_agent(model=modelo, tools=[sumar],
+                          middleware=[mr.MiddlewareReintentos(dormir=esperas.append)])
+    with pytest.raises(RuntimeError, match="respuesta inválida"):
+        agente.invoke({"messages": [{"role": "user", "content": "¿21 + 21?"}]})
     assert len(modelo.recibidos) == 3  # 1 llamada + 2 reintentos, y corta
-    assert mensajes[-1].text == ""
     assert len(list(logs_temporales.glob("*.json"))) == 3
 
 

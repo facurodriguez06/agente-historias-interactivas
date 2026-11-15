@@ -271,8 +271,10 @@ def test_el_segundo_capitulo_no_repite_foto(partida, unsplash):
 
 
 def test_titulo_imagen_y_credito_van_juntos_en_el_pdf(partida, unsplash, tmp_path, monkeypatch):
-    """Regresión: un título no puede quedar solo al pie de una página con su imagen en la siguiente."""
-    from reportlab.platypus import Image, KeepTogether, Paragraph
+    """Regresión: el título de cada capítulo y el crédito de su foto viajan
+    juntos en el PDF. Desde el rediseño de novela de misterio el anti-huérfanas
+    es `keepWithNext` en el estilo del título (antes era KeepTogether)."""
+    from reportlab.platypus import Paragraph, Table
 
     monkeypatch.chdir(tmp_path)
     for numero in range(1, 5):
@@ -288,15 +290,32 @@ def test_titulo_imagen_y_credito_van_juntos_en_el_pdf(partida, unsplash, tmp_pat
         def __init__(self, *args, **kwargs):
             pass
 
+        def addPageTemplates(self, plantillas):
+            capturado["plantillas"] = plantillas
+
         def build(self, elementos):
             capturado["elementos"] = elementos
 
-    monkeypatch.setattr(generar_pdf, "SimpleDocTemplate", DocumentoEspia)
+    monkeypatch.setattr(generar_pdf, "BaseDocTemplate", DocumentoEspia)
     generar_pdf.generar_pdf(partida)
 
-    bloques = [e for e in capturado["elementos"] if isinstance(e, KeepTogether)]
-    assert len(bloques) == 5
-    for bloque in bloques:
-        contenido = bloque._content
-        assert isinstance(contenido[0], Paragraph)  # el título
-        assert any(isinstance(c, Image) for c in contenido)
+    def parrafos_de(flujables):
+        for fluible in flujables:
+            if isinstance(fluible, Paragraph):
+                yield fluible
+            elif isinstance(fluible, Table):
+                celdas = [c for fila in fluible._cellvalues for c in fila]
+                for celda in celdas:
+                    if isinstance(celda, list):
+                        yield from parrafos_de(celda)
+                    elif isinstance(celda, Paragraph):
+                        yield celda
+
+    elementos = capturado["elementos"]
+    titulos = [p for p in parrafos_de(elementos) if p.style.name == "TituloCapitulo"]
+    creditos = [p for p in parrafos_de(elementos) if p.text.startswith("Fotografía:")]
+    assert [p.text for p in titulos] == [f"Título {n}" for n in range(1, 6)]
+    assert len(creditos) == 5
+    assert all("Ana Fotógrafa" in p.text for p in creditos)
+    # El mecanismo anti-huérfanas del rediseño: el título no se separa de lo que sigue.
+    assert bool(generar_pdf._estilos()["titulo"].keepWithNext)

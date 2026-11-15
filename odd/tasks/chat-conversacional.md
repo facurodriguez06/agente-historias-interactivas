@@ -60,6 +60,14 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   escribir el capítulo 1 siguiendo el paso 1 del MANDATORY WORKFLOW en ese
   mismo turno; NO debe llamar a iniciar_nueva_partida (la sesión de la
   partida ya existe).
+- S13: "tras el merge de origin/main (0faadc6 perf, 148e141 PDF), la suite
+  queda en verde conservando los cambios intencionales de main y actualizando
+  los tests que anclaban el comportamiento anterior" — reconciliación de
+  tests: max_tokens 2500 y nueva redacción del rechazo de PDF se anclan en
+  los tests; el reintento de respuestas vacías/mal formadas (contrato
+  documentado en README y docstring) se restaura en el código de main, y el
+  corte con RuntimeError tras 2 reintentos fallidos (base del reintento de
+  capítulo pendiente) se ancla en su test.
 
 ## Tasks
 
@@ -99,6 +107,14 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   1 en ese mismo turno (MANDATORY WORKFLOW paso 1), sin llamar a
   iniciar_nueva_partida. Test guionado del turno "empezá" + aserción barata
   del texto de la regla. Commit U6: 660e6b4.
+- T11 (S13): reconciliación del merge de origin/main: tests actualizados a
+  los cambios intencionales de main (max_tokens 2500 en test_proveedores;
+  redacción "todavía no terminó" en test_pdf; espía sobre BaseDocTemplate y
+  keepWithNext en test_imagenes_partida; RuntimeError tras 2 reintentos
+  vacíos en test_middleware_reintentos) y reintento de respuestas vacías/
+  mal formadas restaurado en middleware_reintentos.py (regresión accidental
+  de main: bucle sin cuerpo, contradecía README y docstring). Commit U7
+  (merge).
 
 ## Log
 
@@ -163,3 +179,13 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   (crea la partida y espera); al decirle "empezá" o "arrancá", el agente
   llama iniciar_nueva_partida y confirma "ya creé la partida" sin escribir
   nunca el capítulo 1.
+- L11: merge de origin/main en progreso (0faadc6 perf: contexto del agente y
+  recuperación de capítulos; 148e141 feat: PDF estética de novela de
+  misterio). app.py resuelto por el orquestador (chat-UX nuestro +
+  "Reintentar capítulo pendiente" de main). La suite quedó en 213 passed /
+  9 failed: los tests deben reconciliarse conservando ambos lados — los
+  cambios intencionales del compañero y los contratos documentados del
+  feature (el reintento de respuestas vacías/mal formadas está documentado
+  en README y docstring y main lo dejó sin cuerpo: regresión accidental;
+  el corte con RuntimeError final sí es intencional, base del reintento de
+  capítulo pendiente).

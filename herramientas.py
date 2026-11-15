@@ -73,19 +73,63 @@ def buscar_contexto_narrativo(consulta: str) -> str:
 
 @tool
 def consultar_estado_partida(runtime: ToolRuntime[ContextoPartida]) -> dict:
-    """Read the current game state from disk BEFORE deciding or writing a chapter.
+    """Read a compact summary of the current game state.
 
-    Returns chapters, choices, decisions, inventory, discovered clues,
-    contexto_narrativo (location, established facts, open/resolved mysteries,
-    last chapter summary), completion status and the next step.
-    Always use this state to preserve continuity, including after a restart.
+    Returns the latest chapter, available choices, previous decisions,
+    inventory, discovered clues, persistent narrative context,
+    completion status and next step.
+
+    Call before generating a chapter or registering a decision.
     Takes no arguments.
     """
     if not runtime.context.id_partida:
         return {"error": SIN_PARTIDA_ACTIVA}
     try:
         estado = estado_partida.consultar_estado(runtime.context.id_partida)
-        return {**estado, "siguiente_paso": estado_partida.siguiente_paso(estado)}
+
+        capitulos = estado["capitulos"]
+        ultimo = capitulos[-1] if capitulos else None
+
+        ultimo_capitulo = None
+        if ultimo:
+            ultimo_capitulo = {
+                "numero": ultimo["numero"],
+                "titulo": ultimo["titulo"],
+                "texto": ultimo["texto"],
+                "opciones": ultimo["opciones"],
+            }
+
+        decisiones = []
+
+        for decision in estado["decisiones"]:
+            numero = decision["capitulo"]
+            opcion = decision["opcion"]
+            capitulo = capitulos[numero - 1]
+
+            accion = capitulo["opciones"][opcion - 1]
+
+            decisiones.append(
+                {
+                    "capitulo": numero,
+                    "opcion": opcion,
+                    "accion_elegida": accion,
+                    "objetos_recogidos": decision.get("objetos_recogidos", []),
+                    "objetos_usados": decision.get("objetos_usados", []),
+                }
+            )
+
+        return {
+            "capitulos_escritos": len(capitulos),
+            "capitulo_actual": estado["capitulo_actual"],
+            "ultimo_capitulo": ultimo_capitulo,
+            "decisiones": decisiones,
+            "inventario": estado["inventario"],
+            "pistas_descubiertas": estado["pistas_descubiertas"],
+            "contexto_narrativo": estado["contexto_narrativo"],
+            "finalizada": estado["finalizada"],
+            "siguiente_paso": estado_partida.siguiente_paso(estado),
+        }
+
     except (ValueError, OSError) as e:
         return {"error": str(e)}
 
@@ -142,26 +186,27 @@ def guardar_capitulo(
     misterios_resueltos: list[str] | None = None,
     resumen_contexto: str | None = None,
 ) -> dict:
-    """Save a chapter AND its persistent narrative context to disk.
+    """Save a chapter and its persistent narrative context.
 
-    Chapters 1 through 4 require exactly three choices; chapter 5 requires [].
-    The title, narrative text and choices must be in Argentine Spanish.
-    Provide these additional context fields in English EVERY time:
-    - ubicacion_actual: current canonical location (e.g., "Entrance Hall").
-    - hechos_nuevos: short facts actually established by this chapter; [] if none.
-    - misterios_nuevos: new unresolved story questions; [] if none.
-    - misterios_resueltos: exact pending questions answered here; [] if none.
-    - resumen_contexto: a factual short summary of this chapter for continuity.
+    Chapters 1-4 require exactly three choices.
+    Chapter 5 requires opciones=[].
 
-    Previously established facts are retained. Never record possibilities
-    or events not actually shown in the story as established facts.
-    The extra fields are optional for compatibility with older callers,
-    but the agent must provide them when generating new chapters.
+    Write the story in Argentine Spanish.
+    Keep narrative context fields concise and in English.
+
+    Provide:
+    - ubicacion_actual: canonical current location.
+    - hechos_nuevos: at most 3 short new established facts.
+    - misterios_nuevos: at most 2 new open mysteries.
+    - misterios_resueltos: resolved pending mysteries.
+    - resumen_contexto: short factual chapter summary.
+
+    Never duplicate collected objects or established facts.
     """
     if not runtime.context.id_partida:
         return {"error": SIN_PARTIDA_ACTIVA}
     try:
-        return estado_partida.guardar_capitulo(
+        resultado = estado_partida.guardar_capitulo(
             runtime.context.id_partida,
             titulo,
             texto,
@@ -173,8 +218,16 @@ def guardar_capitulo(
             resumen_contexto=resumen_contexto,
         )
 
+        return {
+            "capitulo_guardado": resultado["capitulo_guardado"],
+            "finalizada": resultado["finalizada"],
+            "imagen_pendiente": resultado["imagen_pendiente"],
+            "siguiente_paso": resultado["siguiente_paso"],
+        }
+
     except (ValueError, OSError) as e:
         return {"error": str(e)}
+
 
 
 @tool

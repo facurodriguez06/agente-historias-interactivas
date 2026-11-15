@@ -8,7 +8,7 @@ generar_pdf = pytest.importorskip("generar_pdf")
 def test_pdf_rechaza_historia_sin_terminar():
     id_partida = ep.crear_partida()
     escribir_capitulo(id_partida)
-    with pytest.raises(ValueError, match="no termino"):
+    with pytest.raises(ValueError, match="todavía no terminó"):
         generar_pdf.generar_pdf(id_partida)
 
 
