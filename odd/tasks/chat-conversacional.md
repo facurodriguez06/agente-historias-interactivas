@@ -53,6 +53,13 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   guardada" desaparecen. `/nueva` = instrucción explícita de juego: si el
   chat actual tiene una partida sin capítulos, arranca capítulo 1 en ese
   turno; si ya tiene capítulos, crea chat + partida nueva y arranca ahí.
+- S12: "cuando le digo empeza o arranca un partida el agente no arranca. Me
+  dice que ya creo la partida pero no empieza." — cuando el chat ya tiene
+  una partida activa con 0 capítulos y el usuario pide empezar/jugar
+  ("empezá", "arrancá", "jugemos", "empezá la historia"), el agente debe
+  escribir el capítulo 1 siguiendo el paso 1 del MANDATORY WORKFLOW en ese
+  mismo turno; NO debe llamar a iniciar_nueva_partida (la sesión de la
+  partida ya existe).
 
 ## Tasks
 
@@ -87,6 +94,11 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   chats-partida, retomar siempre en chat nuevo, /retomar eliminado, /nueva
   con semántica de instrucción de juego, botón único "Nuevo chat" que crea
   partida a la espera; README. Commit U5: 855ab5e.
+- T10 (S12): regla corregida en `INSTRUCCIONES` del agente: con partida
+  activa de 0 capítulos, pedir empezar/jugar significa escribir el capítulo
+  1 en ese mismo turno (MANDATORY WORKFLOW paso 1), sin llamar a
+  iniciar_nueva_partida. Test guionado del turno "empezá" + aserción barata
+  del texto de la regla. Commit U6.
 
 ## Log
 
@@ -145,3 +157,9 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
 - L9 (cuestionario de diseño): modelo "El chat ES la partida" (uno a uno,
   sidebar tipo ChatGPT, botón único "Nuevo chat"); arranque "Espera mi
   instrucción" (el chat nuevo no escribe capítulo 1 hasta que se lo pida).
+- L10 (reporte de bug tras probar con LLM real, textual): "cuando le digo
+  empeza o arranca un partida el agente no arranca. Me dice que ya creo la
+  partida pero no empieza." Reproducción: chat nuevo vía botón "Nuevo chat"
+  (crea la partida y espera); al decirle "empezá" o "arrancá", el agente
+  llama iniciar_nueva_partida y confirma "ya creé la partida" sin escribir
+  nunca el capítulo 1.
