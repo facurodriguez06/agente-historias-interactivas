@@ -98,7 +98,7 @@ por instrucción y permite retomar una partida abierta en el mismo chat.
   activa de 0 capítulos, pedir empezar/jugar significa escribir el capítulo
   1 en ese mismo turno (MANDATORY WORKFLOW paso 1), sin llamar a
   iniciar_nueva_partida. Test guionado del turno "empezá" + aserción barata
-  del texto de la regla. Commit U6.
+  del texto de la regla. Commit U6: 660e6b4.
 
 ## Log
 
