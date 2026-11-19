@@ -30,6 +30,27 @@ def _validar_id(id_partida):
         raise ValueError("Identificador de partida inválido")
 
 
+def resolver_id(id_o_prefijo):
+    """Acepta un ID completo (32 hex) o un prefijo corto (8+ hex) único."""
+    texto = id_o_prefijo.strip().lower() if isinstance(id_o_prefijo, str) else ""
+    if _ID_VALIDO.fullmatch(texto):
+        return texto
+    if not re.fullmatch(r"[0-9a-f]{8,31}", texto) or not CARPETA_PARTIDAS.exists():
+        raise ValueError("Identificador de partida inválido")
+    coincidencias = [
+        ruta.stem
+        for ruta in CARPETA_PARTIDAS.glob(f"{texto}*.json")
+        if _ID_VALIDO.fullmatch(ruta.stem)
+    ]
+    if len(coincidencias) == 1:
+        return coincidencias[0]
+    raise ValueError(
+        "La partida no existe"
+        if not coincidencias
+        else "Hay más de una partida con ese prefijo"
+    )
+
+
 def _normalizar(texto):
     sin_tildes = unicodedata.normalize("NFD", str(texto))
     sin_tildes = "".join(c for c in sin_tildes if unicodedata.category(c) != "Mn")
@@ -145,6 +166,7 @@ def _resumen_de_partida(estado):
     ultimo = capitulos[-1] if capitulos else None
     return {
         "id_partida": estado["id_partida"],
+        "nombre_chat": estado.get("nombre_chat", ""),
         "capitulos_escritos": len(capitulos),
         "capitulo_actual": estado["capitulo_actual"],
         "finalizada": estado["finalizada"],
@@ -157,8 +179,8 @@ def _resumen_de_partida(estado):
     }
 
 
-def listar_partidas_abiertas(limite=None):
-    """Partidas sin finalizar, ordenadas por fecha; ignora JSON ilegibles."""
+def listar_partidas_abiertas(limite=None, incluir_finalizadas=False):
+    """Partidas ordenadas por fecha; por defecto solo abiertas."""
     if not CARPETA_PARTIDAS.exists():
         return []
     rutas = sorted(
@@ -172,7 +194,7 @@ def listar_partidas_abiertas(limite=None):
             estado = consultar_estado(ruta.stem)
         except (ValueError, OSError, json.JSONDecodeError):
             continue
-        if not estado["finalizada"]:
+        if incluir_finalizadas or not estado["finalizada"]:
             abiertas.append(_resumen_de_partida(estado))
             if limite is not None and len(abiertas) >= limite:
                 break

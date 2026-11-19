@@ -225,7 +225,7 @@ def entradas_del_sidebar():
             continue
         capitulos = estado["capitulos"]
         titulo = estado.get("nombre_chat") or (
-            capitulos[0]["titulo"] if capitulos else "Partida nueva"
+            capitulos[-1]["titulo"] if capitulos else "Partida nueva"
         )
         entradas.append(
             {
@@ -365,7 +365,7 @@ with st.sidebar:
         if estado_nombre is not None:
             capitulos = estado_nombre["capitulos"]
             nombre_actual = estado_nombre.get("nombre_chat") or (
-                capitulos[0]["titulo"] if capitulos else "Partida nueva"
+                capitulos[-1]["titulo"] if capitulos else "Partida nueva"
             )
             with st.expander("Renombrar chat actual"):
                 nuevo_nombre = st.text_input(

@@ -7,6 +7,8 @@ The LLM cannot choose or invent which game session to access.
 
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
+import threading
 
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
@@ -32,6 +34,8 @@ class ContextoPartida:
 SIN_PARTIDA_ACTIVA = (
     "No active game session. Ask the user to start a new game or resume an open one."
 )
+# Evita que el PDF del capítulo 5 se genere antes de adjuntar su imagen.
+_BLOQUEO_PDF = threading.Lock()
 
 
 # RAG: el modelo de embeddings y Chroma se cargan una sola vez.
@@ -234,7 +238,10 @@ def buscar_imagen_capitulo(
             ubicacion=ubicacion,
             escena=capitulo.get("texto", ""),
         )
-        estado_partida.adjuntar_imagen(id_partida, foto)
+        with _BLOQUEO_PDF:
+            estado_partida.adjuntar_imagen(id_partida, foto)
+            if estado["finalizada"] and (Path("historias_generadas") / f"{id_partida}.pdf").exists():
+                generar_pdf(id_partida)
         return {
             "ok": True,
             "capitulo": numero,
@@ -256,33 +263,41 @@ def generar_pdf_historia(runtime: ToolRuntime[ContextoPartida]) -> str:
     if not runtime.context.id_partida:
         return SIN_PARTIDA_ACTIVA
     try:
-        return generar_pdf(runtime.context.id_partida)
+        with _BLOQUEO_PDF:
+            return generar_pdf(runtime.context.id_partida)
     except (ValueError, OSError) as exc:
         return f"Error generating PDF: {exc}"
 
 
 # Tools de chat: listar, consultar, crear o retomar partidas.
 @tool
-def listar_partidas_abiertas(limite: int | None = None) -> dict:
-    """List the user's open games, most recent first. These are UNFINISHED games.
+def listar_partidas_abiertas(
+    limite: int | None = None,
+    incluir_finalizadas: bool = False,
+) -> dict:
+    """List saved games, most recent first. By default returns UNFINISHED games.
 
-    An open game is one that has not reached its ending; every one of them can
-    be resumed with retomar_partida.
-    Each summary contains: id_partida, capitulos_escritos, capitulo_actual,
-    titulo_ultimo_capitulo, resumen_ultimo_capitulo and decision_pendiente.
+    Pass incluir_finalizadas=True when the user asks about finished games or
+    searches a past game by chat name.
+    Each summary contains: id_partida, nombre_chat, capitulos_escritos,
+    capitulo_actual, finalizada, titulo_ultimo_capitulo, resumen_ultimo_capitulo
+    and decision_pendiente.
     - limite: maximum number of games to return; omit it to list them all.
-    Use this tool when the user wants to see, resume, or ask about their open
-    games. Takes no arguments besides the optional limit.
     """
     try:
-        return {"partidas": estado_partida.listar_partidas_abiertas(limite)}
+        return {
+            "partidas": estado_partida.listar_partidas_abiertas(
+                limite, incluir_finalizadas=incluir_finalizadas
+            )
+        }
     except (ValueError, OSError) as exc:
         return {"error": str(exc)}
 
 
 def _estado_con_siguiente_paso(id_partida):
     """Estado completo para las tools que consultan otras partidas."""
-    estado = estado_partida.consultar_estado(id_partida)
+    id_resuelto = estado_partida.resolver_id(id_partida)
+    estado = estado_partida.consultar_estado(id_resuelto)
     return {**estado, "siguiente_paso": estado_partida.siguiente_paso(estado)}
 
 
@@ -292,8 +307,7 @@ def consultar_otra_partida(id_partida: str) -> dict:
 
     Use it to answer questions about past games (their chapters, decisions,
     inventory, clues, or how they ended). It never advances or modifies any game.
-    - id_partida: the exact ID of the other game, as shown by
-      listar_partidas_abiertas or provided by the user.
+    - id_partida: the full 32-character ID or the 8-character short ID shown in the UI.
     Returns the full saved state plus siguiente_paso, and does not require an
     active game session.
     """

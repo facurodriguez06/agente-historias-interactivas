@@ -175,3 +175,53 @@ def test_buscar_imagen_capitulo_sin_partida_activa():
 def test_generar_pdf_historia_sin_partida_activa():
     resultado = herramientas.generar_pdf_historia.func(RuntimeFalso(""))
     assert "No active game session" in resultado
+
+
+def test_consultar_otra_partida_acepta_id_corto():
+    otra = ep.crear_partida()
+    historia_completa(otra)
+
+    resultado = herramientas.consultar_otra_partida.func(otra[:8])
+
+    assert "error" not in resultado
+    assert resultado["id_partida"] == otra
+    assert resultado["finalizada"] is True
+
+
+def test_listar_partidas_puede_incluir_finalizadas():
+    terminada, abierta = ep.crear_partida(), ep.crear_partida()
+    historia_completa(terminada)
+
+    resultado = herramientas.listar_partidas_abiertas.func(incluir_finalizadas=True)
+
+    ids = [p["id_partida"] for p in resultado["partidas"]]
+    assert set(ids) == {abierta, terminada}
+
+
+def test_imagen_tardia_en_capitulo_5_regenera_pdf(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    partida = ep.crear_partida()
+    historia_completa(partida)
+    ruta_pdf = tmp_path / "historias_generadas" / f"{partida}.pdf"
+    ruta_pdf.parent.mkdir()
+    ruta_pdf.write_bytes(b"%PDF-viejo")
+
+    llamadas = []
+    monkeypatch.setattr(
+        herramientas.imagenes,
+        "obtener_imagen",
+        lambda *a, **kw: {
+            "id_foto": "foto-5",
+            "url_imagen": "https://images.unsplash.com/photo-5",
+            "autor": "Autora",
+            "url_autor": "https://unsplash.com/@autora",
+            "url_foto": "https://unsplash.com/photos/foto-5",
+            "descripcion": "study",
+        },
+    )
+    monkeypatch.setattr(herramientas, "generar_pdf", lambda pid: llamadas.append(pid) or str(ruta_pdf))
+
+    resultado = herramientas.buscar_imagen_capitulo.func("study", RuntimeFalso(partida))
+
+    assert resultado["ok"] is True
+    assert llamadas == [partida]
