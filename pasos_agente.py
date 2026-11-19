@@ -71,11 +71,12 @@ def cambio_de_sesion(mensajes):
                 if _id_valido(id_partida):
                     cambio = {"accion": "retomar", "id_partida": id_partida}
         elif isinstance(mensaje, ToolMessage):
-            if mensaje.name != "iniciar_nueva_partida":
+            if mensaje.name not in ("iniciar_nueva_partida", "retomar_partida"):
                 continue
             id_partida = _id_del_resultado(mensaje.content)
             if _id_valido(id_partida):
-                cambio = {"accion": "nueva", "id_partida": id_partida}
+                accion = "nueva" if mensaje.name == "iniciar_nueva_partida" else "retomar"
+                cambio = {"accion": accion, "id_partida": id_partida}
     return cambio
 
 

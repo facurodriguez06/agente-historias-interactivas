@@ -145,3 +145,15 @@ def test_turno_sin_cambios_devuelve_none():
 def test_contenido_malformado_se_ignora():
     assert cambio_de_sesion([resultado_nueva(None, contenido="no es json")]) is None
     assert cambio_de_sesion([resultado_nueva(None, contenido="[1, 2]")]) is None
+
+
+def test_cambio_retomar_con_id_corto_desde_resultado_de_la_tool():
+    mensajes = [
+        llamada_retomar(ID_A[:8]),
+        ToolMessage(
+            content=json.dumps({"id_partida": ID_A, "instruccion": "ok"}),
+            name="retomar_partida",
+            tool_call_id="1",
+        ),
+    ]
+    assert cambio_de_sesion(mensajes) == {"accion": "retomar", "id_partida": ID_A}
