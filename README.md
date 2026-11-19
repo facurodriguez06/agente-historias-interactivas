@@ -262,7 +262,7 @@ La interfaz permite:
 
 El nombre personalizado se guarda en el JSON, por lo que permanece después de cerrar la aplicación.
 
-Si el usuario no asigna un nombre, la interfaz utiliza el título del primer capítulo o **«Partida nueva»** cuando todavía no hay capítulos.
+Si el usuario no asigna un nombre, la interfaz utiliza el título del último capítulo o **«Partida nueva»** cuando todavía no hay capítulos.
 
 ### Eliminación de chats
 
@@ -313,9 +313,7 @@ El agente informa la ruta del PDF al finalizar la historia.
 
 ### Estado
 
-La generación de PDF está implementada y se probó con historias completas de cinco capítulos.
-
-**Pendiente:** incorporar un botón de descarga directa desde Streamlit. Actualmente se informa la ruta del archivo generado.
+La generación y descarga directa del PDF desde Streamlit están implementadas y probadas con historias completas de cinco capítulos.
 
 ---
 
@@ -575,13 +573,14 @@ Para detener el servidor, presionar **Ctrl+C** en la terminal.
 - [x] Renombrado de chats con persistencia en JSON.
 - [x] Eliminación de chats con confirmación.
 - [x] Middleware de reintentos.
+- [x] Descarga directa del PDF desde Streamlit.
 - [x] Pruebas automáticas con Pytest.
 
 ### Pruebas realizadas
 
 Se realizaron pruebas automáticas de las herramientas y del flujo de la aplicación utilizando datos y modelos simulados.
 
-Durante el desarrollo se obtuvo una ejecución de **222 pruebas aprobadas**. Ese resultado corresponde a una versión anterior a los últimos cambios de la interfaz, por lo que debe verificarse nuevamente antes de la entrega.
+La suite actual cuenta con **225 pruebas aprobadas** verificadas tras los últimos cambios.
 
 También se realizaron pruebas manuales utilizando un modelo real de DeepSeek mediante OpenRouter.
 
@@ -600,7 +599,6 @@ Las pruebas manuales permitieron comprobar el funcionamiento general, aunque no 
 
 ### Pendiente de mejorar o verificar
 
-- [ ] Incorporar la descarga directa del PDF desde Streamlit.
 - [ ] Mejorar la relevancia visual de algunas imágenes.
 - [ ] Ampliar las reglas narrativas y consecuencias de las decisiones.
 - [ ] Extender el corpus con nuevas ubicaciones y situaciones.
@@ -608,7 +606,6 @@ Las pruebas manuales permitieron comprobar el funcionamiento general, aunque no 
 - [ ] Mejorar la identificación visual de las partidas en la barra lateral.
 - [ ] Permitir recuperar exactamente el historial conversacional después de cerrar el navegador.
 - [ ] Revisar la limpieza de checkpoints antiguos al eliminar partidas.
-- [ ] Ejecutar nuevamente todos los tests después de los últimos cambios.
 - [ ] Probar la instalación desde cero.
 - [ ] Completar la documentación y la presentación final.
 
@@ -670,12 +667,10 @@ Las pruebas automáticas verifican reglas y comportamientos concretos, pero no r
 
 Las prioridades para continuar el desarrollo son:
 
-1. Verificar nuevamente la aplicación completa después de los últimos cambios de interfaz.
-2. Incorporar un botón para descargar el PDF directamente desde Streamlit.
-3. Mejorar la presentación y administración de los chats.
-4. Revisar la coherencia narrativa y las consecuencias de las decisiones.
-5. Completar las pruebas finales con un modelo real.
-6. Preparar la documentación y presentación del trabajo integrador.
+1. Mejorar la presentación y administración de los chats.
+2. Revisar la coherencia narrativa y las consecuencias de las decisiones.
+3. Completar las pruebas finales con un modelo real.
+4. Preparar la documentación y presentación del trabajo integrador.
 
 ---
 
