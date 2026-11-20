@@ -1,0 +1,18 @@
+TRADUCCIONES COMENTADAS DEL CORPUS — GRUPO 3
+
+Contenido:
+- docs/traducciones_corpus/ambientacion.md
+- docs/traducciones_corpus/lugares.md
+- docs/traducciones_corpus/pistas_y_objetos.md
+
+Cada archivo conserva el inglés original, seguido por su versión española dentro de comentarios HTML: <!-- ... -->.
+
+IMPORTANTE: NO reemplaces los archivos de corpus/ por estas copias comentadas.
+En este proyecto, ingestar.py recorre corpus/*.md y lee el contenido completo mediante read_text().
+Eso incluye los comentarios HTML. Luego genera chunks y embeddings de ese texto, por lo que
+una versión bilingüe dentro de corpus/ puede cambiar los resultados del RAG.
+
+Uso seguro: colocá los archivos en docs/traducciones_corpus/ como están organizados en este ZIP,
+o simplemente abrilos y leelos para estudiar. El código y la base vectorial originales no cambian.
+Si en el futuro quisieran indexar ambos idiomas, sería un cambio intencional del corpus y habría
+que ejecutar python ingestar.py y probar la recuperación semántica y la historia completa.
