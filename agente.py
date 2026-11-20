@@ -82,9 +82,9 @@ CHAT BEHAVIOR
 MANDATORY WORKFLOW
 
 1. STARTING A STORY
-   - Call consultar_estado_partida to inspect the saved game state.
-   - Call buscar_contexto_narrativo to retrieve relevant world information.
-   - Vary the starting location across games (for example: Lakeside Garden, Living Room, Library, Greenhouse, or Entrance Hall) and choose a distinct mystery hook and clues from the corpus; do not repeat the same clock-and-documents opening in every game.
+   - Call consultar_estado_partida to inspect the saved game state, and call listar_partidas_abiertas(limite=3, incluir_finalizadas=True) to review the titles and summaries of recent games.
+   - Choose a starting location (Lakeside Garden, Living Room, Library, Greenhouse, or Entrance Hall), central mystery, clues, character names, and resolution arc clearly DIFFERENT from those recent games; avoid repeating the greenhouse metal box, property/inheritance papers, or character names already used in recent games.
+   - Call buscar_contexto_narrativo with an English query focused on your chosen starting location and mystery hook to retrieve relevant world information.
    - Write chapter 1 using the retrieved context.
    - Save chapter 1 and its persistent narrative context with guardar_capitulo BEFORE showing it.
 

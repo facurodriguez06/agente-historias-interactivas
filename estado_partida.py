@@ -354,6 +354,8 @@ def guardar_capitulo(
 
     # Validar todo antes de modificar el estado.
     titulo = _texto_no_vacio(titulo, "El título")
+    if isinstance(texto, str):
+        texto = texto.replace("\\n", "\n")
     texto = _texto_no_vacio(texto, "El texto")
     opciones = _validar_opciones(numero, opciones)
     hechos = _lista_de_hechos(hechos_nuevos, "hechos_nuevos")

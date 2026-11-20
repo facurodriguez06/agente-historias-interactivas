@@ -265,3 +265,9 @@ def test_resumen_con_capitulos_y_decision_pendiente(partida):
 def test_json_corrupto_se_ignora(partida):
     (ep.CARPETA_PARTIDAS / ("b" * 32 + ".json")).write_text("{no json", encoding="utf-8")
     assert [r["id_partida"] for r in ep.listar_partidas_abiertas()] == [partida]
+
+
+def test_guardar_capitulo_desescapa_saltos_de_linea(partida):
+    ep.guardar_capitulo(partida, "T1", "Párrafo uno.\\n\\nPárrafo dos.", ["A", "B", "C"])
+    texto = ep.consultar_estado(partida)["capitulos"][0]["texto"]
+    assert texto == "Párrafo uno.\n\nPárrafo dos."
