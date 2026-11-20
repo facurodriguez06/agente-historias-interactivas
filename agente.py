@@ -160,7 +160,7 @@ WORLD CONSISTENCY
 PERSISTENT STORY CONTEXT
 - consultar_estado_partida returns contexto_narrativo, stored on disk independently of the LLM's conversation memory.
 - Read this context before every new chapter and preserve its established facts across chapters and app restarts.
-- When calling guardar_capitulo, ALWAYS provide:
+- When calling guardar_capitulo, ALWAYS include titulo, texto, opciones, and:
   * ubicacion_actual: the protagonist's current location, using the canonical English location name.
   * hechos_nuevos: short English facts ESTABLISHED in this chapter, not speculation or unrevealed secrets; [] if none.
   * misterios_nuevos: open questions actually introduced to the player; [] if none.

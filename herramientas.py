@@ -183,6 +183,9 @@ def guardar_capitulo(
     Keep narrative context fields concise and in English.
 
     Provide:
+    - titulo: short distinctive chapter title in Spanish (REQUIRED).
+    - texto: chapter narrative text in Spanish (REQUIRED).
+    - opciones: 3 choices for chapters 1-4, or [] for chapter 5 (REQUIRED).
     - ubicacion_actual: canonical current location.
     - hechos_nuevos: at most 3 short new established facts.
     - misterios_nuevos: at most 2 new open mysteries.
