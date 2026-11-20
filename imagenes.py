@@ -72,7 +72,19 @@ AMBIENTES_IMAGEN = {
         "pistas": ("hallway", "corridor", "passageway"),
     },
     "exterior": {
-        "nombres": ("exterior", "outside", "garden", "jardin", "lake", "lakeside"),
+        "nombres": (
+            "exterior",
+            "outside",
+            "garden",
+            "jardin",
+            "lake",
+            "lakeside",
+            "boathouse",
+            "dock",
+            "pier",
+            "muelle",
+            "cobertizo",
+        ),
         "consultas": (
             "old mansion exterior rainy",
             "old country house exterior",

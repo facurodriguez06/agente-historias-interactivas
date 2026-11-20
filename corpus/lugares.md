@@ -12,3 +12,9 @@ The greenhouse is accessible from the living room through a glass door. It conta
 
 ## Upstairs Study
 The study is located at the top of the staircase. Its door is usually locked, and there is an opening mechanism that the player must discover during the investigation. Its interior must not be described as having been visited if the user has not yet managed to enter.
+
+## Living Room
+The living room connects the entrance hall to the glass door of the greenhouse. It contains a cold fireplace, dust-covered armchairs, a side table, and a pale mark on the wall where a painting or frame seems to have been removed recently.
+
+## Lakeside Garden
+The misty exterior grounds surround the house and lead down to a wooden dock on the lake. Rain-slicked stone paths connect the main terrace, the side door of the greenhouse, and an old boathouse pier where a rope hangs loosely in the fog.

@@ -18,7 +18,15 @@ from imagenes import es_url_de_imagen
 CARPETA_PARTIDAS = Path("partidas")
 TOTAL_CAPITULOS = 5
 OPCIONES_POR_CAPITULO = 3
-CATALOGO_OBJETOS = ("Llave oxidada", "Nota con iniciales", "Fragmento de documento")
+CATALOGO_OBJETOS = (
+    "Llave oxidada",
+    "Nota con iniciales",
+    "Fragmento de documento",
+    "Fotografía vieja",
+    "Diario personal",
+    "Linterna",
+    "Carta sellada",
+)
 _ID_VALIDO = re.compile(r"[0-9a-f]{32}")
 
 

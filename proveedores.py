@@ -16,7 +16,7 @@ import os
 from dotenv import load_dotenv
 from langchain_core.language_models import BaseChatModel
 
-TEMPERATURA = 0.5
+TEMPERATURA = 0.7
 MAX_TOKENS = 2500
 MAX_REINTENTOS = 2
 TIMEOUT_POR_DEFECTO = (
